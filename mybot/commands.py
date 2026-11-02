@@ -52,7 +52,8 @@ class Commands:
             await self.bot.send_message(self.owner_id, text, parse_mode="html", buttons=tg_buttons,
                                         link_preview=False)
         except (ValueError, TypeError) as e:
-            log.error("Không gửi được cho bạn (%s). Hãy mở bot trên Telegram và bấm Start.", e)
+            log.error("Không gửi được cho bạn (%s). Hãy nhắn /start cho bot trên Telegram "
+                      "khi bot đang chạy (chỉ cần làm một lần).", e)
 
     # ---------- đăng ký handler ----------
     def register(self) -> None:

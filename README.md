@@ -48,7 +48,8 @@ Phiên đăng nhập lưu ở `data/user.session` — **file này có toàn quy�
 docker compose up -d
 ```
 
-Bot sẽ nhắn "✅ Bot đã chạy". Docker tự chạy lại bot khi máy khởi động (nếu Docker Desktop được bật cùng Windows).
+Lần đầu tiên, sau khi bot chạy, nhắn `/start` cho bot để bot "biết" bạn (chỉ cần một lần).
+Từ lần khởi động sau, bot sẽ nhắn "✅ Bot đã chạy". Docker tự chạy lại bot khi máy khởi động (nếu Docker Desktop được bật cùng Windows).
 
 Các lệnh hữu ích:
 

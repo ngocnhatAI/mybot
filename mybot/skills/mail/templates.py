@@ -10,6 +10,7 @@
 
 Chỗ cần điền viết trong ngoặc nhọn {...}. Để trống `to:` thì bot sẽ hỏi người nhận.
 Ô kiểu ngày viết {Tên:ngày}: bot hỏi ngày bắt đầu và ngày kết thúc (xem dates.py).
+Ô lựa chọn viết {Tên|Lựa chọn 1|Lựa chọn 2}: bot hiện các nút để bấm chọn.
 Cùng một tên xuất hiện nhiều chỗ (tiêu đề và nội dung) thì chỉ hỏi một lần.
 """
 
@@ -18,10 +19,23 @@ import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
-PLACEHOLDER = re.compile(r"\{([^{}\n]{1,60})\}")
+from . import dates
+
+PLACEHOLDER = re.compile(r"\{([^{}\n]{1,200})\}")
 EMAIL = re.compile(r"^[^@\s,;<>]+@[^@\s,;<>]+\.[^@\s,;<>]+$")
 TO_FIELD = "Gửi tới (email)"
+CC_FIELD = "CC (email)"
 EXAMPLES_DIR = Path(__file__).parent / "examples"
+
+
+def choices(name: str) -> list[str]:
+    """Các lựa chọn của ô {Tên|A|B}; rỗng nếu không phải ô lựa chọn."""
+    return [c.strip() for c in name.split("|")[1:] if c.strip()]
+
+
+def field_label(name: str) -> str:
+    """Tên hiển thị khi hỏi: bỏ phần lựa chọn và hậu tố :ngày."""
+    return dates.label(name.split("|")[0].strip())
 
 
 class TemplateError(ValueError):
@@ -48,8 +62,13 @@ class Template:
 
     @property
     def fields(self) -> list[str]:
-        """Những gì bot cần hỏi: người nhận (nếu template để trống) rồi tới các chỗ trống."""
-        return ([] if self.to else [TO_FIELD]) + self.placeholders
+        """Những gì bot cần hỏi: người nhận và CC (nếu template để trống `to:`), rồi tới các chỗ trống."""
+        return ([] if self.to else [TO_FIELD, CC_FIELD]) + self.placeholders
+
+    @property
+    def editable_fields(self) -> list[str]:
+        """Những gì sửa được ở bước xem trước: luôn sửa được CC."""
+        return self.fields + ([] if CC_FIELD in self.fields else [CC_FIELD])
 
 
 def parse_addresses(text: str) -> list[str]:

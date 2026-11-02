@@ -11,7 +11,8 @@ from pathlib import Path
 from typing import Callable
 
 from . import dates, sender
-from .templates import TO_FIELD, Template, TemplateError, load_templates, parse_addresses, render
+from .templates import (CC_FIELD, TO_FIELD, Template, TemplateError, choices, field_label, load_templates,
+                        parse_addresses, render)
 from ...control.bot import Send
 from ...core.config import MailConfig
 
@@ -36,6 +37,12 @@ class Draft:
     @property
     def to(self) -> list[str]:
         return self.template.to or parse_addresses(self.values.get(TO_FIELD, ""))
+
+    @property
+    def cc(self) -> list[str]:
+        if CC_FIELD in self.values:
+            return parse_addresses(self.values[CC_FIELD])
+        return self.template.cc
 
     @property
     def subject(self) -> str:
@@ -104,7 +111,8 @@ class MailComposer:
             self.draft = None
             return "Đã hủy, không gửi gì.", True
         if action == "edit":
-            rows = [[(f"✏️ {dates.label(name)}"[:60], f"ml:ef:{i}")] for i, name in enumerate(d.template.fields)]
+            rows = [[(f"✏️ {field_label(name)}"[:60], f"ml:ef:{i}")]
+                    for i, name in enumerate(d.template.editable_fields)]
             rows.append([("↩️ Quay lại xem trước", "ml:back")])
             await self.send("Chọn chỗ cần sửa:", rows)
             return "Chọn chỗ cần sửa", True
@@ -113,12 +121,23 @@ class MailComposer:
                 await self.on_text("-")
                 return "Nghỉ 1 ngày", True
             return "OK", True
+        if action == "nocc":
+            if d.queue and d.queue[0] == CC_FIELD:
+                await self.on_text("-")
+                return "Không CC", True
+            return "OK", True
+        if action == "c":
+            if d.queue and choices(d.queue[0]):
+                opts = choices(d.queue[0])
+                if 0 <= int(arg) < len(opts):
+                    await self.on_text(opts[int(arg)])
+                    return opts[int(arg)], True
+            return "OK", True
         if action == "ef":
-            fields = d.template.fields
-            name = fields[int(arg)]
+            name = d.template.editable_fields[int(arg)]
             d.queue, d.editing = steps_for(name), True
             await self._ask(d.queue[0])
-            return f"Sửa: {dates.label(name)}", True
+            return f"Sửa: {field_label(name)}", True
         if action == "back":
             await self._preview()
             return "OK", True
@@ -146,13 +165,25 @@ class MailComposer:
             return False
         step = d.queue[0]
         name, _, part = step.partition("#")
-        if name == TO_FIELD:
+        if name in (TO_FIELD, CC_FIELD):
+            if name == CC_FIELD and dates.is_skip(text):
+                text = ""
             try:
-                if not parse_addresses(text):
+                if name == TO_FIELD and not parse_addresses(text):
                     raise TemplateError("chưa nhập địa chỉ")
+                parse_addresses(text)
             except TemplateError as e:
                 await self.send(f"{escape(str(e))}. Nhập lại địa chỉ email (nhiều địa chỉ thì cách nhau bằng dấu phẩy):")
                 return True
+        opts = choices(name)
+        if opts:
+            picked = next((o for o in opts if o.casefold() == text.strip().casefold()), None)
+            if picked is None and text.strip().isdigit() and 1 <= int(text) <= len(opts):
+                picked = opts[int(text) - 1]
+            if picked is None:
+                await self.send("Hãy bấm một lựa chọn bên dưới:", self._choice_buttons(opts))
+                return True
+            text = picked
         try:
             if part == "start":
                 d.starts[name] = dates.parse_day(text, self._today())
@@ -177,12 +208,21 @@ class MailComposer:
         d = self.draft
         name, _, part = step.partition("#")
         fields = d.template.fields
-        pos = f"({fields.index(name) + 1}/{len(fields)}) " if not d.editing else ""
+        pos = f"({fields.index(name) + 1}/{len(fields)}) " if not d.editing and name in fields else ""
         current = d.values.get(name)
+        if current is None and name == CC_FIELD and d.template.cc:
+            current = ", ".join(d.template.cc)
         hint = f"\nHiện tại: <code>{escape(current)}</code>" if current else ""
-        title = escape(dates.label(name))
+        title = escape(field_label(name))
         buttons = None
-        if part == "start":
+        if choices(name):
+            question = f"<b>{title}</b>? Bấm chọn bên dưới."
+            buttons = self._choice_buttons(choices(name))
+        elif name == CC_FIELD:
+            question = (f"<b>{title}</b>? Nhiều địa chỉ cách nhau bằng dấu phẩy; "
+                        "không cần CC thì bấm nút bên dưới hoặc gõ -")
+            buttons = [[("Không CC", "ml:nocc")]]
+        elif part == "start":
             question = f"<b>{title}</b> — ngày bắt đầu? (ví dụ 24/10)"
         elif part == "end":
             question = (f"<b>{title}</b> — ngày kết thúc? (từ {d.starts[name]:%d/%m/%Y}; "
@@ -193,12 +233,16 @@ class MailComposer:
             question = f"<b>{title}</b>?"
         await self.send(f"{pos}{question}{hint}\n<i>Gõ /cancel để hủy.</i>", buttons)
 
+    @staticmethod
+    def _choice_buttons(opts: list[str]):
+        return [[(o[:60], f"ml:c:{i}")] for i, o in enumerate(opts)]
+
     async def _preview(self) -> None:
         d = self.draft
         body = d.body
         if len(body) > PREVIEW_BODY_LIMIT:
             body = body[:PREVIEW_BODY_LIMIT] + "\n…(còn tiếp)"
-        cc = f"\n<b>CC:</b> {escape(', '.join(d.template.cc))}" if d.template.cc else ""
+        cc = f"\n<b>CC:</b> {escape(', '.join(d.cc))}" if d.cc else ""
         await self.send(
             f"📧 <b>Xem trước email</b>\n"
             f"<b>Từ:</b> {escape(self.cfg.address)}\n"
@@ -212,7 +256,7 @@ class MailComposer:
         d = self.draft
         d.busy = True
         try:
-            msg = sender.build_message(self.cfg, d.to, d.template.cc, d.subject, d.body)
+            msg = sender.build_message(self.cfg, d.to, d.cc, d.subject, d.body)
             await asyncio.to_thread(action, self.cfg, msg)
         except sender.MailError as e:
             d.busy = False

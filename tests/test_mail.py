@@ -8,7 +8,7 @@ from mybot.core.config import MailConfig
 from mybot.skills.mail.composer import MailComposer
 from mybot.skills.mail.dates import DateInputError, format_range, parse_day
 from mybot.skills.mail.sender import MailError, build_message
-from mybot.skills.mail.templates import (TO_FIELD, TemplateError, ensure_examples, load_templates,
+from mybot.skills.mail.templates import (CC_FIELD, TO_FIELD, TemplateError, ensure_examples, load_templates,
                                          parse_template, render)
 
 TPL = """---
@@ -45,7 +45,7 @@ def test_parse_template_and_placeholders_in_order():
 
 def test_template_without_recipient_asks_for_it_first():
     t = parse_template("hen", TPL_NO_TO)
-    assert t.fields == [TO_FIELD, "Tên"]
+    assert t.fields == [TO_FIELD, CC_FIELD, "Tên"]
 
 
 @pytest.mark.parametrize("text", ["không có header", "---\nto: a@b.com\n---\nbody", "---\nsubject: x\n---\n",
@@ -116,6 +116,8 @@ def test_asks_recipient_and_validates_it(tmp_path):
     run(c.on_text("khong-phai-email"))
     assert "không hợp lệ" in out[-1][0]
     run(c.on_text("ban@x.com"))
+    assert out[-1][1] == [[("Không CC", "ml:nocc")]]
+    run(c.on_button("nocc"))
     run(c.on_text("Lan"))
     assert "ban@x.com" in out[-1][0]
     run(c.on_button("draft"))
@@ -143,6 +145,7 @@ def test_send_failure_keeps_draft(tmp_path):
     run(c.cmd_mail())
     run(c.on_button("p:1"))
     run(c.on_text("a@b.com"))
+    run(c.on_text("-"))
     run(c.on_text("Lan"))
     answer, _ = run(c.on_button("send"))
     assert answer == "Không thành công" and c.draft is not None and not c.draft.busy
@@ -183,6 +186,7 @@ def test_leave_request_flow_with_date_range(tmp_path):
     run(c.cmd_mail())
     run(c.on_button("p:2"))  # baogia, hen, nghiphep
     run(c.on_text("toi@gmail.com"))
+    run(c.on_text("sep@x.com, hr@x.com"))
     assert "Ngày nghỉ</b> — ngày bắt đầu" in out[-1][0]
     run(c.on_text("24/10"))
     assert out[-1][1] == [[("Chỉ nghỉ 1 ngày", "ml:one")]]
@@ -192,10 +196,11 @@ def test_leave_request_flow_with_date_range(tmp_path):
     run(c.on_text("khám sơ tuyển"))
     preview = out[-1][0]
     assert "NGÀY 24,25/10/2026" in preview and "Thời gian: 24,25/10/2026" in preview
+    assert "CC:</b> sep@x.com, hr@x.com" in preview
 
     # sửa ô ngày thành 1 ngày bằng nút
     run(c.on_button("edit"))
-    run(c.on_button("ef:1"))
+    run(c.on_button("ef:2"))  # Gửi tới, CC, Ngày nghỉ, Lý do
     run(c.on_text("24/10"))
     run(c.on_button("one"))
     assert "NGÀY 24/10/2026" in out[-1][0]
@@ -206,7 +211,8 @@ def test_real_leave_template_parses():
     if not path.exists():
         pytest.skip("template thật không có trong máy này")
     t = parse_template("don-xin-nghi-phep", path.read_text(encoding="utf-8"))
-    assert t.fields == [TO_FIELD, "Ngày nghỉ:ngày", "Lý do xin nghỉ phép"]
+    assert t.fields == [TO_FIELD, CC_FIELD, "Ngày nghỉ:ngày", "Lý do xin nghỉ phép",
+                        "Hình thức nghỉ phép|Không hưởng lương|Nghỉ phép"]
 
 
 def test_cancel_and_text_ignored_when_idle(tmp_path):
@@ -216,3 +222,27 @@ def test_cancel_and_text_ignored_when_idle(tmp_path):
     run(c.on_button("p:0"))
     run(c.cmd_cancel())
     assert c.draft is None and run(c.on_text("VR")) is False
+
+
+def test_choice_field_by_button_and_by_typing(tmp_path):
+    c, out, mails = make(tmp_path)
+    (c.templates_dir / "z.md").write_text(
+        "---\nto: a@b.com\nsubject: Đơn\n---\nHình thức: {Hình thức|Không hưởng lương|Nghỉ phép}\n",
+        encoding="utf-8")
+    run(c.cmd_mail())
+    run(c.on_button("p:2"))
+    assert out[-1][1] == [[("Không hưởng lương", "ml:c:0")], [("Nghỉ phép", "ml:c:1")]]
+    assert "Hình thức</b>?" in out[-1][0]
+    run(c.on_text("linh tinh"))
+    assert "Hãy bấm một lựa chọn" in out[-1][0]
+    run(c.on_button("c:1"))
+    assert "Hình thức: Nghỉ phép" in out[-1][0]
+    # sửa: CC luôn có trong danh sách sửa, kể cả khi template ghi sẵn người nhận
+    run(c.on_button("edit"))
+    labels = [r[0][0] for r in out[-1][1]]
+    assert labels[:2] == ["✏️ Hình thức", "✏️ CC (email)"]
+    run(c.on_button("ef:1"))
+    run(c.on_text("sep@x.com"))
+    assert "CC:</b> sep@x.com" in out[-1][0]
+    run(c.on_button("send"))
+    assert mails[0]["Cc"] == "sep@x.com"

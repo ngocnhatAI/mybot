@@ -9,6 +9,8 @@
     Kính gửi {Tên khách}, ...
 
 Chỗ cần điền viết trong ngoặc nhọn {...}. Để trống `to:` thì bot sẽ hỏi người nhận.
+Ô kiểu ngày viết {Tên:ngày}: bot hỏi ngày bắt đầu và ngày kết thúc (xem dates.py).
+Cùng một tên xuất hiện nhiều chỗ (tiêu đề và nội dung) thì chỉ hỏi một lần.
 """
 
 import re

@@ -1,10 +1,12 @@
 import asyncio
+from datetime import date
 from pathlib import Path
 
 import pytest
 
 from mybot.core.config import MailConfig
 from mybot.skills.mail.composer import MailComposer
+from mybot.skills.mail.dates import DateInputError, format_range, parse_day
 from mybot.skills.mail.sender import MailError, build_message
 from mybot.skills.mail.templates import (TO_FIELD, TemplateError, ensure_examples, load_templates,
                                          parse_template, render)
@@ -145,6 +147,66 @@ def test_send_failure_keeps_draft(tmp_path):
     answer, _ = run(c.on_button("send"))
     assert answer == "Không thành công" and c.draft is not None and not c.draft.busy
     assert any("từ chối" in t for t, _ in out)
+
+
+TODAY = date(2026, 11, 2)
+
+
+@pytest.mark.parametrize("start,end,expected", [
+    ("24/10", "-", "24/10/2026"),
+    ("24/10", "25/10", "24,25/10/2026"),
+    ("24/10", "27/10", "24,25,26,27/10/2026"),
+    ("5/11", "6/11", "05,06/11/2026"),
+    ("30/10", "02/11", "30/10 - 02/11/2026"),
+    ("30/12", "2/1", "30/12/2026 - 02/01/2027"),
+    ("15/01", "-", "15/01/2027"),  # đã qua quá 60 ngày -> năm sau
+    ("24/10/2025", "-", "24/10/2025"),
+])
+def test_date_range_formatting(start, end, expected):
+    s = parse_day(start, TODAY)
+    e = s if end == "-" else parse_day(end, TODAY, not_before=s)
+    assert format_range(s, e) == expected
+
+
+@pytest.mark.parametrize("bad", ["31/02", "hôm nay", "24"])
+def test_bad_dates_rejected(bad):
+    with pytest.raises(DateInputError):
+        parse_day(bad, TODAY)
+
+
+def test_leave_request_flow_with_date_range(tmp_path):
+    c, out, mails = make(tmp_path)
+    (c.templates_dir / "nghiphep.md").write_text(
+        "---\nto:\nsubject: ĐƠN XIN NGHỈ PHÉP_NGÀY {Ngày nghỉ:ngày}\n---\n"
+        "Lý do: {Lý do}\nThời gian: {Ngày nghỉ:ngày}\n", encoding="utf-8")
+    c._today = lambda: TODAY
+    run(c.cmd_mail())
+    run(c.on_button("p:2"))  # baogia, hen, nghiphep
+    run(c.on_text("toi@gmail.com"))
+    assert "Ngày nghỉ</b> — ngày bắt đầu" in out[-1][0]
+    run(c.on_text("24/10"))
+    assert out[-1][1] == [[("Chỉ nghỉ 1 ngày", "ml:one")]]
+    run(c.on_text("22/10"))  # trước ngày bắt đầu
+    assert "sau ngày bắt đầu" in out[-1][0]
+    run(c.on_text("25/10"))
+    run(c.on_text("khám sơ tuyển"))
+    preview = out[-1][0]
+    assert "NGÀY 24,25/10/2026" in preview and "Thời gian: 24,25/10/2026" in preview
+
+    # sửa ô ngày thành 1 ngày bằng nút
+    run(c.on_button("edit"))
+    run(c.on_button("ef:1"))
+    run(c.on_text("24/10"))
+    run(c.on_button("one"))
+    assert "NGÀY 24/10/2026" in out[-1][0]
+
+
+def test_real_leave_template_parses():
+    path = Path(__file__).parents[1] / "data" / "templates" / "don-xin-nghi-phep.md"
+    if not path.exists():
+        pytest.skip("template thật không có trong máy này")
+    t = parse_template("don-xin-nghi-phep", path.read_text(encoding="utf-8"))
+    assert t.fields == [TO_FIELD, "Ngày nghỉ:ngày", "Lý do xin nghỉ phép"]
 
 
 def test_cancel_and_text_ignored_when_idle(tmp_path):

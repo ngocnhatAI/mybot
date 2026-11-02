@@ -5,11 +5,12 @@ Không dùng AI. Email chỉ được gửi khi bạn bấm nút Gửi.
 
 import asyncio
 from dataclasses import dataclass, field
+from datetime import date
 from html import escape
 from pathlib import Path
 from typing import Callable
 
-from . import sender
+from . import dates, sender
 from .templates import TO_FIELD, Template, TemplateError, load_templates, parse_addresses, render
 from ...control.bot import Send
 from ...core.config import MailConfig
@@ -26,7 +27,9 @@ Template là các file .md trong thư mục data/templates/ trên máy."""
 class Draft:
     template: Template
     values: dict[str, str] = field(default_factory=dict)
-    queue: list[str] = field(default_factory=list)  # các chỗ còn phải hỏi
+    # các bước còn phải hỏi; ô ngày tách thành "<tên>#start" và "<tên>#end"
+    queue: list[str] = field(default_factory=list)
+    starts: dict[str, date] = field(default_factory=dict)  # ngày bắt đầu của ô ngày đang hỏi
     editing: bool = False  # đang sửa một chỗ: trả lời xong thì quay lại xem trước
     busy: bool = False  # đang gửi / lưu nháp: chặn bấm hai lần
 
@@ -43,11 +46,17 @@ class Draft:
         return render(self.template.body, self.values)
 
 
+def steps_for(name: str) -> list[str]:
+    return [f"{name}#start", f"{name}#end"] if dates.is_date_field(name) else [name]
+
+
 class MailComposer:
     def __init__(self, cfg: MailConfig, templates_dir: Path, send: Send,
-                 send_mail: Callable = sender.send, save_draft: Callable = sender.save_draft):
+                 send_mail: Callable = sender.send, save_draft: Callable = sender.save_draft,
+                 today: Callable[[], date] = date.today):
         self.cfg, self.templates_dir, self.send = cfg, templates_dir, send
         self._send_mail, self._save_draft = send_mail, save_draft
+        self._today = today
         self.draft: Draft | None = None
         self._listing: list[str] = []
 
@@ -95,16 +104,21 @@ class MailComposer:
             self.draft = None
             return "Đã hủy, không gửi gì.", True
         if action == "edit":
-            rows = [[(f"✏️ {name}"[:60], f"ml:ef:{i}")] for i, name in enumerate(d.template.fields)]
+            rows = [[(f"✏️ {dates.label(name)}"[:60], f"ml:ef:{i}")] for i, name in enumerate(d.template.fields)]
             rows.append([("↩️ Quay lại xem trước", "ml:back")])
             await self.send("Chọn chỗ cần sửa:", rows)
             return "Chọn chỗ cần sửa", True
+        if action == "one":
+            if d.queue and d.queue[0].endswith("#end"):
+                await self.on_text("-")
+                return "Nghỉ 1 ngày", True
+            return "OK", True
         if action == "ef":
             fields = d.template.fields
             name = fields[int(arg)]
-            d.queue, d.editing = [name], True
-            await self._ask(name)
-            return f"Sửa: {name}", True
+            d.queue, d.editing = steps_for(name), True
+            await self._ask(d.queue[0])
+            return f"Sửa: {dates.label(name)}", True
         if action == "back":
             await self._preview()
             return "OK", True
@@ -118,7 +132,7 @@ class MailComposer:
         tpl = next((t for t in templates if t.key == key), None)
         if not tpl:
             return "Template không còn hoặc đang lỗi, gõ /mail lại."
-        self.draft = Draft(tpl, queue=list(tpl.fields))
+        self.draft = Draft(tpl, queue=[s for f in tpl.fields for s in steps_for(f)])
         if self.draft.queue:
             await self._ask(self.draft.queue[0])
         else:
@@ -130,7 +144,8 @@ class MailComposer:
         d = self.draft
         if not d or not d.queue:
             return False
-        name = d.queue[0]
+        step = d.queue[0]
+        name, _, part = step.partition("#")
         if name == TO_FIELD:
             try:
                 if not parse_addresses(text):
@@ -138,7 +153,18 @@ class MailComposer:
             except TemplateError as e:
                 await self.send(f"{escape(str(e))}. Nhập lại địa chỉ email (nhiều địa chỉ thì cách nhau bằng dấu phẩy):")
                 return True
-        d.values[name] = text.strip()
+        try:
+            if part == "start":
+                d.starts[name] = dates.parse_day(text, self._today())
+            elif part == "end":
+                start = d.starts[name]
+                end = start if dates.is_skip(text) else dates.parse_day(text, self._today(), not_before=start)
+                d.values[name] = dates.format_range(start, end)
+            else:
+                d.values[name] = text.strip()
+        except dates.DateInputError as e:
+            await self.send(f"⚠️ {escape(str(e))}. Nhập lại:")
+            return True
         d.queue.pop(0)
         if d.queue:
             await self._ask(d.queue[0])
@@ -147,13 +173,25 @@ class MailComposer:
             await self._preview()
         return True
 
-    async def _ask(self, name: str) -> None:
+    async def _ask(self, step: str) -> None:
         d = self.draft
+        name, _, part = step.partition("#")
         fields = d.template.fields
         pos = f"({fields.index(name) + 1}/{len(fields)}) " if not d.editing else ""
         current = d.values.get(name)
         hint = f"\nHiện tại: <code>{escape(current)}</code>" if current else ""
-        await self.send(f"{pos}<b>{escape(name)}</b>?{hint}\n<i>Gõ /cancel để hủy.</i>")
+        title = escape(dates.label(name))
+        buttons = None
+        if part == "start":
+            question = f"<b>{title}</b> — ngày bắt đầu? (ví dụ 24/10)"
+        elif part == "end":
+            question = (f"<b>{title}</b> — ngày kết thúc? (từ {d.starts[name]:%d/%m/%Y}; "
+                        "nghỉ 1 ngày thì bấm nút bên dưới hoặc gõ -)")
+            buttons = [[("Chỉ nghỉ 1 ngày", "ml:one")]]
+            hint = ""
+        else:
+            question = f"<b>{title}</b>?"
+        await self.send(f"{pos}{question}{hint}\n<i>Gõ /cancel để hủy.</i>", buttons)
 
     async def _preview(self) -> None:
         d = self.draft

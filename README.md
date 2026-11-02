@@ -118,6 +118,10 @@ Kính gửi {Tên khách},
 ```
 
 - Chỗ cần điền viết trong `{...}`; bot hỏi lần lượt theo thứ tự xuất hiện (tiêu đề trước).
+- Cùng một `{...}` xuất hiện nhiều chỗ (ví dụ cả tiêu đề và nội dung) thì bot chỉ hỏi một lần.
+- **Ô ngày** viết `{Tên:ngày}`, ví dụ `{Ngày nghỉ:ngày}`: bot hỏi ngày bắt đầu (gõ `24/10`, bot tự thêm năm)
+  rồi ngày kết thúc (bấm *Chỉ nghỉ 1 ngày* nếu nghỉ 1 ngày). Kết quả: `24/10/2026` · `24,25,26/10/2026` ·
+  qua tháng `30/10 - 02/11/2026`.
 - `to:` để trống → bot hỏi người nhận. Nhiều địa chỉ cách nhau bằng dấu phẩy.
 - Tên file (bỏ `.md`) là tên template trong danh sách.
 - Lưu file bằng mã hóa **UTF-8** (Notepad mặc định đã là UTF-8).

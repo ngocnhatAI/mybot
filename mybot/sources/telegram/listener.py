@@ -103,4 +103,4 @@ class Listener:
         row_id = self.store.add_message(msg, "notified", hit)
         row = self.store.get_message(row_id)
         await self.send(important_message(row, self.tz),
-                        [[("✅ Đúng", f"nf:{row_id}:ok"), ("❌ Không quan trọng", f"nf:{row_id}:bad")]])
+                        [[("Đúng", f"nf:{row_id}:ok"), ("Không quan trọng", f"nf:{row_id}:bad")]])

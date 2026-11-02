@@ -145,7 +145,7 @@ class Digester:
                 await self.send(text, buttons)
                 text, buttons = f"{title} (tiếp)", []
             text += "\n\n" + block
-            buttons.append([(f"{no} ✅ Đúng", f"di:{item_id}:ok"), (f"{no} ❌ Sai nhãn", f"di:{item_id}:bad")])
+            buttons.append([(f"{no} Đúng", f"di:{item_id}:ok"), (f"{no} Sai nhãn", f"di:{item_id}:bad")])
         if buttons:
             await self.send(text, buttons)
 

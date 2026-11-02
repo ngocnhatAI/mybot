@@ -87,42 +87,82 @@ def make(tmp_path, send_mail=None, save_draft=None):
     return c, sent_to_owner, mails
 
 
+KEEP_ADD_CLEAR = [[("Giữ nguyên", "ml:keep"), ("Thêm", "ml:add"), ("Xóa hết", "ml:clr")]]
+
+
 def test_full_flow_pick_fill_preview_send(tmp_path):
     c, out, mails = make(tmp_path)
     run(c.cmd_mail())
-    assert len(out[-1][1]) == 2  # 2 nút template
-    run(c.on_button("p:0"))  # baogia
-    assert "khach@abc.com" in out[-1][0] and out[-1][1][0] == [("✅ Giữ nguyên", "ml:keep")]
-    run(c.on_button("keep"))  # người nhận mặc định
-    run(c.on_text("-"))  # CC mặc định (gõ - giống Enter)
-    assert "(3/5)" in out[-1][0] and "Dự án" in out[-1][0]
+    assert out[-1][1] == [[("baogia", "ml:p:0")], [("hen", "ml:p:1")]]
+    run(c.on_button("p:0"))
+    assert "khach@abc.com" in out[-1][0] and out[-1][1] == KEEP_ADD_CLEAR
+    run(c.on_button("keep"))
+    assert "sep@gmail.com" in out[-1][0] and out[-1][1] == KEEP_ADD_CLEAR
+    run(c.on_button("keep"))
+    assert out[-1][0] == "(3/5) Dự án?"
     for answer in ["VR Studio", "anh Minh", "50 triệu"]:
         assert run(c.on_text(answer))
     preview = out[-1][0]
+    assert "Tới: khach@abc.com\nCC: sep@gmail.com" in preview
     assert "Báo giá VR Studio" in preview and "anh Minh" in preview and "50 triệu" in preview
+    assert out[-1][1] == [[("Gửi", "ml:send"), ("Sửa", "ml:edit")], [("Lưu nháp", "ml:draft"), ("Hủy", "ml:cancel")]]
     assert mails == []  # chưa bấm Gửi thì chưa gửi
 
     answer, _ = run(c.on_button("send"))
     assert "Đã gửi" in answer and len(mails) == 1
     assert mails[0]["Subject"] == "Báo giá VR Studio"
     assert c.draft is None
-    # bấm Gửi lần nữa không gửi thêm
-    run(c.on_button("send"))
+    run(c.on_button("send"))  # bấm Gửi lần nữa không gửi thêm
     assert len(mails) == 1
 
 
-def test_asks_recipient_and_validates_it(tmp_path):
+def test_add_button_only_adds(tmp_path):
     c, out, mails = make(tmp_path)
     run(c.cmd_mail())
-    run(c.on_button("p:1"))  # hen: không có người nhận
-    assert TO_FIELD in out[-1][0]
+    run(c.on_button("p:0"))
+    run(c.on_button("add"))
+    assert out[-1] == ("Nhập email cần thêm:", None)
+    run(c.on_text("ketoan@abc.com, sep@gmail.com"))
+    assert c.draft.to == ["khach@abc.com", "ketoan@abc.com", "sep@gmail.com"]
+    assert "sep@gmail.com" in out[-1][0]  # đã sang câu CC
+
+
+def test_clear_button_clears_then_asks_for_email(tmp_path):
+    c, out, mails = make(tmp_path)
+    run(c.cmd_mail())
+    run(c.on_button("p:0"))
+    run(c.on_button("keep"))
+    run(c.on_button("clr"))  # xóa hết CC
+    assert out[-1] == ("Đã xóa hết. Nhập email:", None) and c.draft.cc == []
     run(c.on_text("khong-phai-email"))
     assert "không hợp lệ" in out[-1][0]
+    run(c.on_text("hr@abc.com"))
+    for answer in ["VR", "Minh", "50 triệu"]:
+        run(c.on_text(answer))
+    assert "CC: hr@abc.com" in out[-1][0]
+    run(c.on_button("send"))
+    assert mails[0]["Cc"] == "hr@abc.com"
+
+
+def test_cannot_keep_empty_recipient(tmp_path):
+    c, out, mails = make(tmp_path)
+    run(c.cmd_mail())
+    run(c.on_button("p:0"))
+    run(c.on_button("clr"))
+    answer, _ = run(c.on_button("keep"))
+    assert answer == "Chưa có người nhận" and c.draft.queue[0] == TO_FIELD
+
+
+def test_empty_recipients_ask_to_type_and_cc_can_be_skipped(tmp_path):
+    c, out, mails = make(tmp_path)
+    run(c.cmd_mail())
+    run(c.on_button("p:1"))  # hen: không có người nhận mặc định
+    assert out[-1] == ("(1/3) Gửi tới (email)? Nhập email:", None)
     run(c.on_text("ban@x.com"))
     assert out[-1][1] == [[("Không CC", "ml:keep")]]
     run(c.on_button("keep"))
     run(c.on_text("Lan"))
-    assert "ban@x.com" in out[-1][0]
+    assert "Tới: ban@x.com" in out[-1][0] and "CC:" not in out[-1][0]
     run(c.on_button("draft"))
     assert mails[0][0] == "draft" and mails[0][1]["To"] == "ban@x.com"
 
@@ -131,11 +171,14 @@ def test_edit_one_field_returns_to_preview(tmp_path):
     c, out, mails = make(tmp_path)
     run(c.cmd_mail())
     run(c.on_button("p:0"))
-    for answer in ["-", "-", "VR", "Minh", "50 triệu"]:
+    run(c.on_button("keep"))
+    run(c.on_button("keep"))
+    for answer in ["VR", "Minh", "50 triệu"]:
         run(c.on_text(answer))
     run(c.on_button("edit"))
-    run(c.on_button("ef:4"))  # Gửi tới, CC, Dự án, Tên khách, Số tiền
-    assert "Hiện tại" in out[-1][0] and "50 triệu" in out[-1][0]
+    assert [r[0][0] for r in out[-1][1]] == ["Gửi tới (email)", "CC (email)", "Dự án", "Tên khách", "Số tiền", "Quay lại"]
+    run(c.on_button("ef:4"))
+    assert out[-1][0] == "Số tiền?\nHiện tại: 50 triệu"
     run(c.on_text("60 triệu"))
     assert "60 triệu" in out[-1][0] and "Xem trước" in out[-1][0]
 
@@ -148,7 +191,7 @@ def test_send_failure_keeps_draft(tmp_path):
     run(c.cmd_mail())
     run(c.on_button("p:1"))
     run(c.on_text("a@b.com"))
-    run(c.on_text("-"))
+    run(c.on_button("keep"))
     run(c.on_text("Lan"))
     answer, _ = run(c.on_button("send"))
     assert answer == "Không thành công" and c.draft is not None and not c.draft.busy
@@ -184,26 +227,31 @@ def test_leave_request_flow_with_date_range(tmp_path):
     c, out, mails = make(tmp_path)
     (c.templates_dir / "nghiphep.md").write_text(
         "---\nto:\nsubject: ĐƠN XIN NGHỈ PHÉP_NGÀY {Ngày nghỉ:ngày}\n---\n"
-        "Lý do: {Lý do}\nThời gian: {Ngày nghỉ:ngày}\n", encoding="utf-8")
+        "Lý do: {Lý do}\nThời gian: {Ngày nghỉ:ngày}\n"
+        "Hình thức: {Hình thức|Không hưởng lương|Nghỉ phép}\n", encoding="utf-8")
     c._today = lambda: TODAY
     run(c.cmd_mail())
     run(c.on_button("p:2"))  # baogia, hen, nghiphep
     run(c.on_text("toi@gmail.com"))
     run(c.on_text("sep@x.com, hr@x.com"))
-    assert "Ngày nghỉ</b> — ngày bắt đầu" in out[-1][0]
+    assert out[-1] == ("(3/5) Ngày nghỉ — từ ngày? (vd 24/10)", None)
     run(c.on_text("24/10"))
-    assert out[-1][1] == [[("Chỉ nghỉ 1 ngày", "ml:one")]]
+    assert out[-1] == ("(3/5) Ngày nghỉ — đến ngày?", [[("Chỉ 1 ngày", "ml:one")]])
     run(c.on_text("22/10"))  # trước ngày bắt đầu
     assert "sau ngày bắt đầu" in out[-1][0]
     run(c.on_text("25/10"))
     run(c.on_text("khám sơ tuyển"))
+    assert out[-1][1] == [[("Không hưởng lương", "ml:c:0")], [("Nghỉ phép", "ml:c:1")]]
+    run(c.on_text("linh tinh"))
+    assert out[-1][0] == "Chọn một mục:"
+    run(c.on_button("c:1"))
     preview = out[-1][0]
     assert "NGÀY 24,25/10/2026" in preview and "Thời gian: 24,25/10/2026" in preview
-    assert "CC:</b> sep@x.com, hr@x.com" in preview
+    assert "CC: sep@x.com, hr@x.com" in preview and "Hình thức: Nghỉ phép" in preview
 
     # sửa ô ngày thành 1 ngày bằng nút
     run(c.on_button("edit"))
-    run(c.on_button("ef:2"))  # Gửi tới, CC, Ngày nghỉ, Lý do
+    run(c.on_button("ef:2"))  # Gửi tới, CC, Ngày nghỉ, ...
     run(c.on_text("24/10"))
     run(c.on_button("one"))
     assert "NGÀY 24/10/2026" in out[-1][0]
@@ -227,53 +275,10 @@ def test_cancel_and_text_ignored_when_idle(tmp_path):
     assert c.draft is None and run(c.on_text("VR")) is False
 
 
-def test_choice_field_by_button_and_by_typing(tmp_path):
-    c, out, mails = make(tmp_path)
-    (c.templates_dir / "z.md").write_text(
-        "---\nto: a@b.com\nsubject: Đơn\n---\nHình thức: {Hình thức|Không hưởng lương|Nghỉ phép}\n",
-        encoding="utf-8")
-    run(c.cmd_mail())
-    run(c.on_button("p:2"))
-    run(c.on_button("keep"))
-    run(c.on_button("keep"))  # không CC
-    assert out[-1][1] == [[("Không hưởng lương", "ml:c:0")], [("Nghỉ phép", "ml:c:1")]]
-    assert "Hình thức</b>?" in out[-1][0]
-    run(c.on_text("linh tinh"))
-    assert "Hãy bấm một lựa chọn" in out[-1][0]
-    run(c.on_button("c:1"))
-    assert "Hình thức: Nghỉ phép" in out[-1][0]
-    # sửa: người nhận và CC luôn có trong danh sách sửa
-    run(c.on_button("edit"))
-    labels = [r[0][0] for r in out[-1][1]]
-    assert labels[:3] == ["✏️ Gửi tới (email)", "✏️ CC (email)", "✏️ Hình thức"]
-    run(c.on_button("ef:1"))
-    run(c.on_text("sep@x.com"))
-    assert "CC:</b> sep@x.com" in out[-1][0]
-    run(c.on_button("send"))
-    assert mails[0]["Cc"] == "sep@x.com"
-
-
-def test_default_recipients_keep_add_and_clear(tmp_path):
-    c, out, mails = make(tmp_path)
-    run(c.cmd_mail())
-    run(c.on_button("p:0"))  # baogia: to khach@abc.com, cc sep@gmail.com
-    run(c.on_text("ketoan@abc.com"))  # gõ địa chỉ khác -> thêm vào
-    assert "• sep@gmail.com" in out[-1][0]  # đang hỏi CC, hiện CC mặc định
-    run(c.on_button("clr"))  # xóa hết CC
-    assert out[-1][1] == [[("Không CC", "ml:keep")]]
-    run(c.on_text("hr@abc.com"))
-    for answer in ["VR", "Minh", "50 triệu"]:
-        run(c.on_text(answer))
-    assert "Tới:</b> khach@abc.com, ketoan@abc.com" in out[-1][0]
-    assert "CC:</b> hr@abc.com" in out[-1][0]
-    run(c.on_button("send"))
-    assert mails[0]["To"] == "khach@abc.com, ketoan@abc.com" and mails[0]["Cc"] == "hr@abc.com"
-
-
-def test_cannot_keep_empty_recipient(tmp_path):
+def test_stale_buttons_do_nothing(tmp_path):
     c, out, mails = make(tmp_path)
     run(c.cmd_mail())
     run(c.on_button("p:0"))
-    run(c.on_button("clr"))
-    answer, _ = run(c.on_button("keep"))
-    assert "Chưa có người nhận" in answer and c.draft.queue[0] == TO_FIELD
+    run(c.on_button("keep"))
+    answer, _ = run(c.on_button("one"))  # nút của câu hỏi khác
+    assert answer == "Câu hỏi này đã qua" and c.draft.queue[0] == CC_FIELD

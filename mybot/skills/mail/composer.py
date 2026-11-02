@@ -17,12 +17,13 @@ from ...control.bot import Send
 from ...core.config import MailConfig
 
 PREVIEW_BODY_LIMIT = 3000
-NL = "\n"
 
 HELP = """<b>Soạn email</b>
-/mail  — chọn template rồi bot hỏi lần lượt từng chỗ cần điền
+/mail  — chọn template rồi trả lời từng câu hỏi
 /cancel  — hủy email đang soạn
-Template là các file .md trong thư mục data/templates/ trên máy."""
+Template là các file .md trong data/templates/."""
+
+RECIPIENT_FIELDS = (TO_FIELD, CC_FIELD)
 
 
 @dataclass
@@ -34,7 +35,7 @@ class Draft:
     starts: dict[str, date] = field(default_factory=dict)  # ngày bắt đầu của ô ngày đang hỏi
     editing: bool = False  # đang sửa một chỗ: trả lời xong thì quay lại xem trước
     busy: bool = False  # đang gửi / lưu nháp: chặn bấm hai lần
-    # người nhận / CC: khởi tạo từ template (mặc định), bạn giữ nguyên, gõ thêm hoặc xóa hết
+    # người nhận / CC: khởi tạo từ template (mặc định); Giữ nguyên / Thêm / Xóa hết
     to: list[str] = field(default_factory=list)
     cc: list[str] = field(default_factory=list)
 
@@ -74,21 +75,20 @@ class MailComposer:
     # ---------- lệnh ----------
     async def cmd_mail(self, _args=None) -> None:
         templates, errors = load_templates(self.templates_dir)
-        warn = ("\n\n⚠️ Template lỗi, bị bỏ qua:\n" + "\n".join(f"• {escape(e)}" for e in errors)) if errors else ""
+        warn = ("\n\nTemplate lỗi, bị bỏ qua:\n" + "\n".join(escape(e) for e in errors)) if errors else ""
         if not templates:
-            await self.send("Chưa có template nào. Thêm file .md vào thư mục data/templates/ "
-                            "(xem file mau-bao-gia.md để làm theo)." + warn)
+            await self.send("Chưa có template. Thêm file .md vào data/templates/." + warn)
             return
         self._listing = [t.key for t in templates]
-        rows = [[(f"📄 {t.key} — {t.subject}"[:60], f"ml:p:{i}")] for i, t in enumerate(templates)]
-        await self.send("<b>Chọn template để soạn email:</b>" + warn, rows)
+        rows = [[(t.key[:60], f"ml:p:{i}")] for i, t in enumerate(templates)]
+        await self.send("Chọn template:" + warn, rows)
 
     async def cmd_cancel(self, _args=None) -> None:
         if not self.draft:
             await self.send("Không có email nào đang soạn.")
             return
         self.draft = None
-        await self.send("Đã hủy email đang soạn.")
+        await self.send("Đã hủy.")
 
     # ---------- nút bấm ----------
     async def on_button(self, rest: str) -> tuple[str, bool]:
@@ -97,57 +97,54 @@ class MailComposer:
             return await self._pick(int(arg)), True
         d = self.draft
         if not d:
-            return "Email này đã được gửi, lưu hoặc hủy rồi.", True
+            return "Email này đã xong hoặc đã hủy.", True
         if d.busy:
-            return "Đang xử lý, chờ chút…", False
+            return "Đang xử lý…", False
+        step = d.queue[0] if d.queue else ""
+
         if action == "send":
             return await self._deliver(self._send_mail, "Đã gửi"), True
         if action == "draft":
-            return await self._deliver(self._save_draft, "Đã lưu vào Nháp của Gmail"), True
+            return await self._deliver(self._save_draft, "Đã lưu nháp"), True
         if action == "cancel":
             self.draft = None
-            return "Đã hủy, không gửi gì.", True
+            return "Đã hủy", True
         if action == "edit":
-            rows = [[(f"✏️ {field_label(name)}"[:60], f"ml:ef:{i}")]
-                    for i, name in enumerate(d.template.fields)]
-            rows.append([("↩️ Quay lại xem trước", "ml:back")])
-            await self.send("Chọn chỗ cần sửa:", rows)
-            return "Chọn chỗ cần sửa", True
-        if action == "one":
-            if d.queue and d.queue[0].endswith("#end"):
-                await self.on_text("-")
-                return "Nghỉ 1 ngày", True
-            return "OK", True
-        if action == "keep":
-            if d.queue and d.queue[0] in (TO_FIELD, CC_FIELD):
-                name = d.queue[0]
-                if name == TO_FIELD and not d.to:
-                    return "Chưa có người nhận nào, hãy gõ địa chỉ email.", False
-                await self._advance()
-                return ", ".join(d.recipients(name)) or "Không CC", True
-            return "OK", True
-        if action == "clr":
-            if d.queue and d.queue[0] in (TO_FIELD, CC_FIELD):
-                d.recipients(d.queue[0]).clear()
-                await self._ask(d.queue[0])
-                return "Đã xóa hết, nhập lại", True
-            return "OK", True
-        if action == "c":
-            if d.queue and choices(d.queue[0]):
-                opts = choices(d.queue[0])
-                if 0 <= int(arg) < len(opts):
-                    await self.on_text(opts[int(arg)])
-                    return opts[int(arg)], True
-            return "OK", True
+            rows = [[(field_label(name)[:60], f"ml:ef:{i}")] for i, name in enumerate(d.template.fields)]
+            rows.append([("Quay lại", "ml:back")])
+            await self.send("Sửa mục nào?", rows)
+            return "Sửa", True
         if action == "ef":
             name = d.template.fields[int(arg)]
             d.queue, d.editing = steps_for(name), True
             await self._ask(d.queue[0])
-            return f"Sửa: {field_label(name)}", True
+            return field_label(name), True
         if action == "back":
             await self._preview()
-            return "OK", True
-        return "OK", True
+            return "Quay lại", True
+
+        # các nút trả lời câu hỏi đang hỏi
+        if action == "keep" and step in RECIPIENT_FIELDS:
+            if step == TO_FIELD and not d.to:
+                return "Chưa có người nhận", False
+            await self._advance()
+            return "Giữ nguyên", True
+        if action == "add" and step in RECIPIENT_FIELDS:
+            await self.send("Nhập email cần thêm:")
+            return "Thêm", True
+        if action == "clr" and step in RECIPIENT_FIELDS:
+            d.recipients(step).clear()
+            await self.send("Đã xóa hết. Nhập email:")
+            return "Xóa hết", True
+        if action == "one" and step.endswith("#end"):
+            await self.on_text(d.starts[step.partition("#")[0]].strftime("%d/%m/%Y"))
+            return "Chỉ 1 ngày", True
+        if action == "c" and choices(step):
+            opts = choices(step)
+            if 0 <= int(arg) < len(opts):
+                await self.on_text(opts[int(arg)])
+                return opts[int(arg)], True
+        return "Câu hỏi này đã qua", True
 
     async def _pick(self, index: int) -> str:
         if not 0 <= index < len(self._listing):
@@ -159,11 +156,8 @@ class MailComposer:
             return "Template không còn hoặc đang lỗi, gõ /mail lại."
         self.draft = Draft(tpl, queue=[s for f in tpl.fields for s in steps_for(f)],
                            to=list(tpl.to), cc=list(tpl.cc))
-        if self.draft.queue:
-            await self._ask(self.draft.queue[0])
-        else:
-            await self._preview()
-        return f"Soạn theo template {key}"
+        await self._ask(self.draft.queue[0])
+        return key
 
     # ---------- trả lời chữ ----------
     async def on_text(self, text: str) -> bool:
@@ -172,31 +166,31 @@ class MailComposer:
             return False
         step = d.queue[0]
         name, _, part = step.partition("#")
-        if name in (TO_FIELD, CC_FIELD):
-            current = d.recipients(name)
-            if dates.is_skip(text):  # "-" giống bấm Enter: giữ nguyên danh sách hiện tại
-                if name == TO_FIELD and not current:
-                    await self.send("Chưa có người nhận nào, hãy gõ địa chỉ email:")
-                    return True
-                await self._advance()
-                return True
+
+        if name in RECIPIENT_FIELDS:  # gõ email = thêm vào danh sách
             try:
                 added = parse_addresses(text)
             except TemplateError as e:
-                await self.send(f"{escape(str(e))}. Nhập lại địa chỉ email (nhiều địa chỉ thì cách nhau bằng dấu phẩy):")
+                await self.send(f"{escape(str(e))}. Nhập lại:")
                 return True
+            if not added:
+                await self.send("Nhập email:")
+                return True
+            current = d.recipients(name)
             current.extend(a for a in added if a.lower() not in {c.lower() for c in current})
             await self._advance()
             return True
+
         opts = choices(name)
         if opts:
             picked = next((o for o in opts if o.casefold() == text.strip().casefold()), None)
             if picked is None and text.strip().isdigit() and 1 <= int(text) <= len(opts):
                 picked = opts[int(text) - 1]
             if picked is None:
-                await self.send("Hãy bấm một lựa chọn bên dưới:", self._choice_buttons(opts))
+                await self.send("Chọn một mục:", self._choice_buttons(opts))
                 return True
             text = picked
+
         try:
             if part == "start":
                 d.starts[name] = dates.parse_day(text, self._today())
@@ -207,7 +201,7 @@ class MailComposer:
             else:
                 d.values[name] = text.strip()
         except dates.DateInputError as e:
-            await self.send(f"⚠️ {escape(str(e))}. Nhập lại:")
+            await self.send(f"{escape(str(e))}. Nhập lại:")
             return True
         await self._advance()
         return True
@@ -226,44 +220,33 @@ class MailComposer:
         d = self.draft
         name, _, part = step.partition("#")
         fields = d.template.fields
-        pos = f"({fields.index(name) + 1}/{len(fields)}) " if not d.editing and name in fields else ""
-        current = d.values.get(name)
-        hint = f"\nHiện tại: <code>{escape(current)}</code>" if current else ""
+        pos = f"({fields.index(name) + 1}/{len(fields)}) " if not d.editing else ""
         title = escape(field_label(name))
         buttons = None
-        if choices(name):
-            question = f"<b>{title}</b>? Bấm chọn bên dưới."
-            buttons = self._choice_buttons(choices(name))
-        elif name in (TO_FIELD, CC_FIELD):
-            question, buttons = self._recipient_question(name, title)
-            hint = ""
-        elif part == "start":
-            question = f"<b>{title}</b> — ngày bắt đầu? (ví dụ 24/10)"
-        elif part == "end":
-            question = (f"<b>{title}</b> — ngày kết thúc? (từ {d.starts[name]:%d/%m/%Y}; "
-                        "nghỉ 1 ngày thì bấm nút bên dưới hoặc gõ -)")
-            buttons = [[("Chỉ nghỉ 1 ngày", "ml:one")]]
-            hint = ""
-        else:
-            question = f"<b>{title}</b>?"
-        await self.send(f"{pos}{question}{hint}\n<i>Gõ /cancel để hủy.</i>", buttons)
 
-    def _recipient_question(self, name: str, title: str):
-        current = self.draft.recipients(name)
-        if current:
-            listed = NL.join(f"• {escape(a)}" for a in current)
-            question = (f"<b>{title}</b>:{NL}{listed}{NL}"
-                        "Bấm <b>Giữ nguyên</b> (hoặc gõ -) để dùng danh sách này; "
-                        "gõ địa chỉ email khác để <b>thêm</b> vào.")
-            buttons = [[("✅ Giữ nguyên", "ml:keep")], [("🗑 Xóa hết, nhập lại", "ml:clr")]]
-        elif name == TO_FIELD:
-            question = f"<b>{title}</b>? Gõ địa chỉ email (nhiều địa chỉ cách nhau bằng dấu phẩy)."
-            buttons = None
+        if name in RECIPIENT_FIELDS:
+            current = d.recipients(name)
+            if current:
+                text = f"{title}:\n" + "\n".join(escape(a) for a in current)
+                buttons = [[("Giữ nguyên", "ml:keep"), ("Thêm", "ml:add"), ("Xóa hết", "ml:clr")]]
+            elif name == TO_FIELD:
+                text = f"{title}? Nhập email:"
+            else:
+                text = f"{title}? Nhập email:"
+                buttons = [[("Không CC", "ml:keep")]]
+        elif choices(name):
+            text = f"{title}?"
+            buttons = self._choice_buttons(choices(name))
+        elif part == "start":
+            text = f"{title} — từ ngày? (vd 24/10)"
+        elif part == "end":
+            text = f"{title} — đến ngày?"
+            buttons = [[("Chỉ 1 ngày", "ml:one")]]
         else:
-            question = (f"<b>{title}</b>? Gõ địa chỉ email để thêm CC, "
-                        "hoặc bấm nút bên dưới (gõ -) nếu không cần CC.")
-            buttons = [[("Không CC", "ml:keep")]]
-        return question, buttons
+            text = f"{title}?"
+            if d.values.get(name):
+                text += f"\nHiện tại: {escape(d.values[name])}"
+        await self.send(pos + text, buttons)
 
     @staticmethod
     def _choice_buttons(opts: list[str]):
@@ -274,15 +257,14 @@ class MailComposer:
         body = d.body
         if len(body) > PREVIEW_BODY_LIMIT:
             body = body[:PREVIEW_BODY_LIMIT] + "\n…(còn tiếp)"
-        cc = f"\n<b>CC:</b> {escape(', '.join(d.cc))}" if d.cc else ""
+        cc = f"\nCC: {escape(', '.join(d.cc))}" if d.cc else ""
         await self.send(
-            f"📧 <b>Xem trước email</b>\n"
-            f"<b>Từ:</b> {escape(self.cfg.address)}\n"
-            f"<b>Tới:</b> {escape(', '.join(d.to))}{cc}\n"
-            f"<b>Tiêu đề:</b> {escape(d.subject)}\n\n"
+            f"<b>Xem trước</b>\n"
+            f"Tới: {escape(', '.join(d.to))}{cc}\n"
+            f"Tiêu đề: {escape(d.subject)}\n\n"
             f"{escape(body)}",
-            [[("✉️ Gửi", "ml:send"), ("✏️ Sửa", "ml:edit")],
-             [("📝 Lưu nháp", "ml:draft"), ("❌ Hủy", "ml:cancel")]])
+            [[("Gửi", "ml:send"), ("Sửa", "ml:edit")],
+             [("Lưu nháp", "ml:draft"), ("Hủy", "ml:cancel")]])
 
     async def _deliver(self, action: Callable, done_text: str) -> str:
         d = self.draft
@@ -292,7 +274,7 @@ class MailComposer:
             await asyncio.to_thread(action, self.cfg, msg)
         except sender.MailError as e:
             d.busy = False
-            await self.send(f"⚠️ {escape(str(e))}\nEmail vẫn được giữ, bạn có thể bấm lại.")
+            await self.send(f"Lỗi: {escape(str(e))}\nEmail vẫn được giữ, bấm lại để thử.")
             await self._preview()
             return "Không thành công"
         self.draft = None

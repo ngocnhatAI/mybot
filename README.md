@@ -5,8 +5,8 @@ Hai phần: **theo dõi Telegram** và **soạn email theo template** (xem mục
 Phần theo dõi Telegram đọc tin nhắn trên tài khoản của bạn:
 
 - **Báo ngay** tin quan trọng theo luật: người/nhóm **VIP**, bạn **bị nhắc tên hoặc được trả lời**, tin có **từ khóa**.
-- Mọi tin khác được gom lại, **15 phút một lần** (đổi bằng `/interval`) gửi Claude Haiku 5.5 tóm tắt theo đầu mục. Mỗi đầu mục có nhãn ⭐ quan trọng / ▫️ không quan trọng và nút ✅ Đúng / ❌ Sai nhãn.
-- Bấm ❌ → bot **đề xuất một bài học** → bạn bấm **Đồng ý** thì mới ghi. Bài học là ghi chú cho AI (ghi vào `data/lessons.md`) hoặc thêm từ khóa/VIP.
+- Mọi tin khác được gom lại, **15 phút một lần** (đổi bằng `/interval`) gửi Claude Haiku 5.5 tóm tắt theo đầu mục. Mỗi đầu mục có nhãn ⭐ quan trọng / ▫️ không quan trọng và nút Đúng / Sai nhãn.
+- Bấm Sai nhãn → bot **đề xuất một bài học** → bạn bấm **Đồng ý** thì mới ghi. Bài học là ghi chú cho AI (ghi vào `data/lessons.md`) hoặc thêm từ khóa/VIP.
 - **Giờ nghỉ** hằng ngày: không tóm tắt 15 phút, đến cuối giờ nghỉ gửi một bản tóm tắt toàn bộ.
 
 Mẹo: tắt tiếng (mute) mọi chat trong Telegram, chỉ để thông báo của bot này.
@@ -51,7 +51,7 @@ docker compose up -d
 ```
 
 Lần đầu tiên, sau khi bot chạy, nhắn `/start` cho bot để bot "biết" bạn (chỉ cần một lần).
-Từ lần khởi động sau, bot sẽ nhắn "✅ Bot đã chạy". Docker tự chạy lại bot khi máy khởi động (nếu Docker Desktop được bật cùng Windows).
+Từ lần khởi động sau, bot sẽ nhắn "Bot đã chạy". Docker tự chạy lại bot khi máy khởi động (nếu Docker Desktop được bật cùng Windows).
 
 Các lệnh hữu ích:
 
@@ -100,7 +100,7 @@ trong file này mà vào danh sách `/keyword`, `/vip`.
    GMAIL_ADDRESS=ban@gmail.com
    GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
    ```
-4. `docker compose up -d --build`. Bot báo "✅ Bot đã chạy (theo dõi Telegram, soạn email)".
+4. `docker compose up -d --build`. Bot báo "Bot đã chạy (theo dõi Telegram, soạn email)".
 
 App Password có **toàn quyền vào hộp thư** — không chia sẻ. Bị lộ thì vào lại trang ở bước 2 để xóa.
 
@@ -124,19 +124,19 @@ Kính gửi {Tên khách},
   qua tháng `30/10 - 02/11/2026`.
 - **Ô lựa chọn** viết `{Tên|Lựa chọn 1|Lựa chọn 2}`, ví dụ `{Hình thức nghỉ phép|Không hưởng lương|Nghỉ phép}`:
   bot hiện nút để bấm chọn.
-- `to:` / `cc:` là **người nhận mặc định**. Mỗi lần soạn, bot hiện danh sách và hỏi lại:
-  bấm **✅ Giữ nguyên** (hoặc gõ `-`) để dùng; **gõ địa chỉ khác để thêm vào**; bấm **🗑 Xóa hết** để nhập lại từ đầu.
-  Để trống thì bot hỏi bạn gõ (CC có nút *Không CC*). Nhiều địa chỉ cách nhau bằng dấu phẩy.
-- Ở bước xem trước, **✏️ Sửa** có cả mục *Gửi tới* và *CC*.
+- `to:` / `cc:` là **người nhận mặc định**. Mỗi lần soạn, bot hiện danh sách kèm 3 nút:
+  **Giữ nguyên** · **Thêm** (nhập email để thêm vào) · **Xóa hết** (xóa rồi nhập email mới).
+  Để trống thì bot hỏi bạn nhập email (CC có nút *Không CC*). Nhiều địa chỉ cách nhau bằng dấu phẩy.
+- Ở bước xem trước, nút **Sửa** có cả mục *Gửi tới* và *CC*.
 - Tên file (bỏ `.md`) là tên template trong danh sách.
 - Lưu file bằng mã hóa **UTF-8** (Notepad mặc định đã là UTF-8).
 
 ### Dùng trong bot
 1. Gõ `/mail` → bấm chọn template.
 2. Trả lời lần lượt từng câu hỏi (`/cancel` để hủy).
-3. Xem trước → **✉️ Gửi** · **✏️ Sửa** (chọn chỗ cần sửa) · **📝 Lưu nháp** (vào Nháp của Gmail) · **❌ Hủy**.
+3. Xem trước → **Gửi** · **Sửa** (chọn chỗ cần sửa) · **Lưu nháp** (vào Nháp của Gmail) · **Hủy**.
 
-Email **chỉ được gửi khi bạn bấm ✉️ Gửi**.
+Email **chỉ được gửi khi bạn bấm Gửi**.
 
 ## Cấu hình `config.yaml`
 

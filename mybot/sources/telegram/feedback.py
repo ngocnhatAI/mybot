@@ -68,7 +68,7 @@ class Feedback:
             f"(sửa thành {'⭐ quan trọng' if corrected else '▫️ không quan trọng'}):\n\n"
             f"{escape(proposal.lesson)}\n\n<i>{KIND_TEXT[kind]}</i>"
             + (f"\nGiá trị: <code>{escape(label or value)}</code>" if kind != "note" else ""),
-            [[("👍 Đồng ý", f"lp:{pid}:y"), ("Bỏ qua", f"lp:{pid}:n")]])
+            [[("Đồng ý", f"lp:{pid}:y"), ("Bỏ qua", f"lp:{pid}:n")]])
         return "Đã ghi nhận ❌, xem đề xuất bài học bên dưới"
 
     async def on_proposal(self, pid: int, accept: bool) -> str:

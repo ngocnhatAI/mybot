@@ -57,7 +57,7 @@ async def run(cfg: Config) -> None:
     controller.register()
 
     parts = ["theo dõi Telegram"] + (["soạn email"] if composer else [])
-    await controller.send(f"✅ Bot đã chạy ({', '.join(parts)}) cho tài khoản <b>{me.first_name}</b>. "
+    await controller.send(f"Bot đã chạy ({', '.join(parts)}) cho tài khoản <b>{me.first_name}</b>. "
                           "Gõ /help để xem lệnh.")
     await asyncio.gather(
         user.run_until_disconnected(),

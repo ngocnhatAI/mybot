@@ -4,7 +4,8 @@
 
 timezone: Asia/Ho_Chi_Minh
 
-# Bao nhiêu phút tổng hợp tin không quan trọng một lần
+# Bao nhiêu phút tổng hợp tin không quan trọng một lần (mặc định).
+# Đổi bằng lệnh /interval trong bot thì giá trị đó được ưu tiên hơn dòng này.
 batch_minutes: 15
 
 # Giữ lịch sử tin nhắn bao nhiêu ngày

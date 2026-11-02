@@ -8,7 +8,7 @@ from html import escape
 from telethon import Button, events, utils
 
 from .config import Config
-from .digest import get_schedule
+from .digest import MAX_INTERVAL, MIN_INTERVAL, get_interval, get_schedule
 from .feedback import Feedback
 from .lessons import Lessons
 from .rules import normalize
@@ -25,6 +25,7 @@ HELP = """<b>Các lệnh</b>
   Tin có từ khóa được báo ngay.
 /ignore list | add &lt;tên nhóm/người&gt; | remove &lt;số hoặc tên&gt;
   Bỏ qua hẳn chat: không đọc, không tóm tắt, không gửi AI.
+/interval  — xem chu kỳ tóm tắt · /interval 30  — tóm tắt 30 phút một lần
 /schedule  — xem giờ nghỉ
 /schedule 17:30 08:00 notify|hold  — đặt giờ nghỉ hằng ngày
   notify: tin quan trọng vẫn báo ngay · hold: giữ tới cuối giờ nghỉ
@@ -71,6 +72,7 @@ class Commands:
                 "/keyword": lambda a: self.cmd_list("keyword", a),
                 "/kw": lambda a: self.cmd_list("keyword", a),
                 "/ignore": lambda a: self.cmd_list("ignore", a),
+                "/interval": self.cmd_interval,
                 "/schedule": self.cmd_schedule,
                 "/lessons": self.cmd_lessons,
                 "/status": self.cmd_status,
@@ -200,6 +202,19 @@ class Commands:
         exact = [f for f in found if normalize(f[1]) == nq]
         return exact or found
 
+    # ---------- /interval ----------
+    async def cmd_interval(self, args: list[str]) -> None:
+        current = get_interval(self.store, self.cfg)
+        if not args:
+            await self.send(f"Đang tóm tắt <b>{current} phút</b> một lần. Đổi bằng: /interval 30")
+            return
+        value = args[0].strip().lower().removesuffix("p").removesuffix("m")
+        if not value.isdigit() or not MIN_INTERVAL <= int(value) <= MAX_INTERVAL:
+            await self.send(f"Chu kỳ phải là số phút từ {MIN_INTERVAL} đến {MAX_INTERVAL}. Ví dụ: /interval 60")
+            return
+        self.store.set_setting("batch_minutes", int(value))
+        await self.send(f"Đã đổi: tóm tắt <b>{int(value)} phút</b> một lần (trước đây {current} phút).")
+
     # ---------- /schedule ----------
     async def cmd_schedule(self, args: list[str]) -> None:
         sched = get_schedule(self.store)
@@ -267,6 +282,7 @@ class Commands:
             f"AI tháng này: {calls_m} lần · ~{cost(in_m, out_m):.2f} USD\n"
             f"VIP: {len(self.store.list_items('vip'))} · Từ khóa: {len(self.store.list_items('keyword'))} · "
             f"Bỏ qua: {len(self.store.list_items('ignore'))} · Bài học: {len(self.lessons.list())}\n"
+            f"Chu kỳ tóm tắt: {get_interval(self.store, self.cfg)} phút · "
             f"Giờ nghỉ: {f'{sched.label()} ({sched.mode})' if sched else 'chưa đặt'}")
 
     async def cmd_help(self, _args) -> None:

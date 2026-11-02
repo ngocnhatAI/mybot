@@ -3,7 +3,7 @@
 Bot đọc tin nhắn Telegram trên tài khoản của bạn:
 
 - **Báo ngay** tin quan trọng theo luật: người/nhóm **VIP**, bạn **bị nhắc tên hoặc được trả lời**, tin có **từ khóa**.
-- Mọi tin khác được gom lại, **15 phút một lần** gửi Claude Haiku 5.5 tóm tắt theo đầu mục. Mỗi đầu mục có nhãn ⭐ quan trọng / ▫️ không quan trọng và nút ✅ Đúng / ❌ Sai nhãn.
+- Mọi tin khác được gom lại, **15 phút một lần** (đổi bằng `/interval`) gửi Claude Haiku 5.5 tóm tắt theo đầu mục. Mỗi đầu mục có nhãn ⭐ quan trọng / ▫️ không quan trọng và nút ✅ Đúng / ❌ Sai nhãn.
 - Bấm ❌ → bot **đề xuất một bài học** → bạn bấm **Đồng ý** thì mới ghi. Bài học là ghi chú cho AI (ghi vào `data/lessons.md`) hoặc thêm từ khóa/VIP.
 - **Giờ nghỉ** hằng ngày: không tóm tắt 15 phút, đến cuối giờ nghỉ gửi một bản tóm tắt toàn bộ.
 
@@ -73,6 +73,7 @@ docker compose down
 | `/vip list` · `/vip add <tên, @username hoặc id>` · `/vip remove <số>` | Tin từ người/nhóm VIP → báo ngay |
 | `/keyword list` · `/keyword add <từ>` · `/keyword remove <số>` (viết tắt `/kw`) | Tin có từ khóa → báo ngay |
 | `/ignore list` · `/ignore add <tên chat>` · `/ignore remove <số>` | Bỏ qua hẳn chat: không đọc, không tóm tắt, không gửi AI |
+| `/interval` · `/interval 30` | Xem / đổi chu kỳ tóm tắt (5–720 phút, mặc định 15) |
 | `/schedule` · `/schedule 17:30 08:00 hold` · `/schedule off` | Giờ nghỉ hằng ngày. `notify`: tin quan trọng vẫn báo ngay; `hold`: giữ tới cuối giờ nghỉ |
 | `/lessons` · `/lessons remove <số>` | Xem / xóa bài học |
 | `/status` | Số tin hôm nay, chi phí AI ước tính |

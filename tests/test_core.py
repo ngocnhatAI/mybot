@@ -138,6 +138,18 @@ def test_digest_batches_every_15_minutes_and_covers_all_messages(tmp_path):
     assert 999 not in json.loads(item["message_ids"])
 
 
+def test_interval_setting_overrides_config(tmp_path):
+    cfg, store, lessons, sent, send, dg = setup(tmp_path, FakeAI())
+    store.set_setting("batch_minutes", 30)
+    t0 = datetime(2026, 11, 2, 9, 0, tzinfo=TZ)
+    asyncio.run(dg.tick(t0))
+    store.add_message(msg(text="a"), "pending")
+    asyncio.run(dg.tick(t0 + timedelta(minutes=15)))
+    assert sent == []
+    asyncio.run(dg.tick(t0 + timedelta(minutes=30)))
+    assert len(sent) == 1
+
+
 def test_rest_window_holds_then_summarizes_at_end(tmp_path):
     ai = FakeAI()
     cfg, store, lessons, sent, send, dg = setup(tmp_path, ai)

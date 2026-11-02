@@ -20,9 +20,17 @@ Send = Callable[[str, list[list[tuple[str, str]]] | None], Awaitable[None]]
 ITEMS_PER_MESSAGE = 8
 
 
+MIN_INTERVAL, MAX_INTERVAL = 5, 720
+
+
 def get_schedule(store: Storage) -> RestSchedule | None:
     d = store.get_setting("schedule")
     return RestSchedule.from_dict(d) if d else None
+
+
+def get_interval(store: Storage, cfg: Config) -> int:
+    """Chu kỳ tóm tắt (phút): giá trị đặt bằng /interval, nếu chưa đặt thì lấy từ config.yaml."""
+    return int(store.get_setting("batch_minutes") or cfg.batch_minutes)
 
 
 def chunk_by_size(rows: list[sqlite3.Row], lines: list[str], max_chars: int) -> list[list[int]]:
@@ -69,7 +77,8 @@ class Digester:
         last = datetime.fromisoformat(last_iso) if last_iso else None
         rest_window = sched.last_end(now) if sched else None
         after_rest = bool(rest_window and last and last < rest_window[1])
-        due = last is None or after_rest or now - last >= timedelta(minutes=self.cfg.batch_minutes)
+        interval = timedelta(minutes=get_interval(self.store, self.cfg))
+        due = last is None or after_rest or now - last >= interval
         if not due:
             return
 

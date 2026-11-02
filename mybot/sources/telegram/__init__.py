@@ -17,5 +17,6 @@ def setup(cfg: Config, controller: Controller, user, store: Storage, lessons: Le
     ai = AI(cfg.ai, store)
     feedback = Feedback(cfg, store, ai, lessons, controller.send)
     TelegramCommands(cfg, controller, user, store, lessons, feedback).register()
+    controller.add_text_handler(feedback.on_text)
     Listener(user, store, controller.send, cfg.timezone, skip_ids).register()
     return Digester(cfg, store, ai, lessons, controller.send)

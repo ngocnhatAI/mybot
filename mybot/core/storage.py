@@ -31,7 +31,8 @@ CREATE TABLE IF NOT EXISTS digest_items (
 CREATE TABLE IF NOT EXISTS proposals (
     id INTEGER PRIMARY KEY,
     created_at TEXT, kind TEXT, value TEXT, label TEXT, lesson TEXT,
-    status TEXT  -- pending | accepted | rejected
+    status TEXT,  -- pending | accepted | rejected | revised (đã được viết lại theo góp ý)
+    item_id INTEGER, corrected INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS lists (
@@ -57,7 +58,14 @@ class Storage:
         self.db = sqlite3.connect(str(path))
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
+        self._migrate()
         self.db.commit()
+
+    def _migrate(self) -> None:
+        cols = {r["name"] for r in self.db.execute("PRAGMA table_info(proposals)")}
+        for col in ("item_id", "corrected"):
+            if col not in cols:
+                self.db.execute(f"ALTER TABLE proposals ADD COLUMN {col} INTEGER")
 
     # ---------- cài đặt ----------
     def get_setting(self, key: str, default=None):
@@ -152,11 +160,12 @@ class Storage:
         self.db.commit()
 
     # ---------- đề xuất bài học ----------
-    def add_proposal(self, kind: str, value: str, label: str, lesson: str) -> int:
+    def add_proposal(self, kind: str, value: str, label: str, lesson: str,
+                     item_id: int | None = None, corrected: bool = False) -> int:
         cur = self.db.execute(
-            """INSERT INTO proposals(created_at, kind, value, label, lesson, status)
-               VALUES (?,?,?,?,?, 'pending')""",
-            (utcnow().isoformat(), kind, value, label, lesson))
+            """INSERT INTO proposals(created_at, kind, value, label, lesson, status, item_id, corrected)
+               VALUES (?,?,?,?,?, 'pending', ?, ?)""",
+            (utcnow().isoformat(), kind, value, label, lesson, item_id, int(corrected)))
         self.db.commit()
         return cur.lastrowid
 

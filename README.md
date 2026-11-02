@@ -4,9 +4,12 @@ Hai phần: **theo dõi Telegram** và **soạn email theo template** (xem mục
 
 Phần theo dõi Telegram đọc tin nhắn trên tài khoản của bạn:
 
-- **Báo ngay** tin quan trọng theo luật: người/nhóm **VIP**, bạn **bị nhắc tên hoặc được trả lời**, tin có **từ khóa**.
+- **Báo ngay** tin quan trọng theo luật: **tin nhắn riêng** từ người **VIP**, bạn **bị nhắc tên hoặc được trả lời**, tin có **từ khóa**.
+  (Người VIP nhắn trong nhóm thì không báo ngay.)
 - Mọi tin khác được gom lại, **15 phút một lần** (đổi bằng `/interval`) gửi Claude Haiku 5.5 tóm tắt theo đầu mục. Mỗi đầu mục có nhãn ⭐ quan trọng / ▫️ không quan trọng và nút Đúng / Sai nhãn.
-- Bấm Sai nhãn → bot **đề xuất một bài học** → bạn bấm **Đồng ý** thì mới ghi. Bài học là ghi chú cho AI (ghi vào `data/lessons.md`) hoặc thêm từ khóa/VIP.
+- Bấm Sai nhãn → bot **đề xuất một bài học** với 3 nút **Đồng ý** · **Góp ý** · **Bỏ qua**.
+  *Góp ý*: bạn gõ ý của mình (hoặc tự viết lại bài học), AI viết lại rồi hỏi lại; góp ý bao nhiêu lần cũng được.
+  Chỉ khi bấm **Đồng ý** bài học mới được ghi. Bài học là ghi chú cho AI (`data/lessons.md`) hoặc thêm từ khóa/VIP.
 - **Giờ nghỉ** hằng ngày: không tóm tắt 15 phút, đến cuối giờ nghỉ gửi một bản tóm tắt toàn bộ.
 
 Mẹo: tắt tiếng (mute) mọi chat trong Telegram, chỉ để thông báo của bot này.
@@ -73,7 +76,7 @@ docker compose down
 
 | Lệnh | Tác dụng |
 |---|---|
-| `/vip list` · `/vip add <tên, @username hoặc id>` · `/vip remove <số>` | Tin từ người/nhóm VIP → báo ngay |
+| `/vip list` · `/vip add <tên, @username hoặc id>` · `/vip remove <số>` | Tin nhắn riêng từ người VIP → báo ngay (chỉ thêm được người, không thêm nhóm) |
 | `/keyword list` · `/keyword add <từ>` · `/keyword remove <số>` (viết tắt `/kw`) | Tin có từ khóa → báo ngay |
 | `/ignore list` · `/ignore add <tên chat>` · `/ignore remove <số>` | Bỏ qua hẳn chat: không đọc, không tóm tắt, không gửi AI |
 | `/interval` · `/interval 30` | Xem / đổi chu kỳ tóm tắt (5–720 phút, mặc định 15) |

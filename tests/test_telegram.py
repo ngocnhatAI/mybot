@@ -36,11 +36,19 @@ def test_keyword_is_whole_word_and_case_insensitive():
 
 
 def test_rules_priority_vip_then_mention_then_keyword():
-    assert match_rules(msg(text="gấp"), {"42": "An"}, ["gấp"]).kind == "vip"
-    assert match_rules(msg(chat_id=-1001), {"-1001": "Nhóm Sales"}, []).kind == "vip"
+    private = dict(chat_id=42, chat_kind="private", chat_title="An")
+    assert match_rules(msg(text="gấp", **private), {"42": "An"}, ["gấp"]).kind == "vip"
     assert match_rules(msg(mentioned=True, text="gấp"), {}, ["gấp"]).kind == "mention"
     assert match_rules(msg(text="gấp"), {}, ["gấp"]).kind == "keyword"
     assert match_rules(msg(), {}, ["gấp"]) is None
+
+
+def test_vip_only_counts_in_private_chats():
+    # người VIP nhắn trong nhóm: không báo ngay (trừ khi nhắc tên bạn hoặc có từ khóa)
+    assert match_rules(msg(sender_id=42), {"42": "An"}, []) is None
+    assert match_rules(msg(sender_id=42, mentioned=True), {"42": "An"}, []).kind == "mention"
+    # id nhóm có trong VIP cũng không còn tác dụng
+    assert match_rules(msg(chat_id=-1001), {"-1001": "Nhóm Sales"}, []) is None
 
 
 def test_message_link():
@@ -100,7 +108,10 @@ class FakeAI:
         return DigestResult(items=[DigestItem(title="Báo giá", summary="Khách hỏi báo giá",
                                               important=True, reason="Khách hỏi", message_ids=ids[:-1] + [999])])
 
-    async def propose_lesson(self, item, lines, senders, corrected, lessons):
+    async def propose_lesson(self, item, lines, senders, corrected, lessons, previous=None, feedback=None):
+        self.lesson_calls = getattr(self, "lesson_calls", []) + [(senders, previous, feedback)]
+        if feedback:
+            return LessonProposal(kind="note", value="", lesson=f"Viết lại: {feedback}")
         return LessonProposal(kind="keyword", value="báo giá", lesson="Tin có 'báo giá' là quan trọng")
 
 
@@ -114,7 +125,7 @@ def setup(tmp_path, ai):
     lessons = Lessons(tmp_path / "lessons.md")
     sent = []
 
-    async def send(text, buttons):
+    async def send(text, buttons=None):
         sent.append((text, buttons))
 
     return cfg, store, lessons, sent, send, Digester(cfg, store, ai, lessons, send)
@@ -187,11 +198,49 @@ def test_wrong_label_proposes_lesson_and_applies_only_after_accept(tmp_path):
     assert "Đề xuất bài học" in sent[-1][0]
     assert store.list_map("keyword") == {}  # chưa đồng ý thì chưa ghi gì
 
+    assert [b[0] for b in sent[-1][1][0]] == ["Đồng ý", "Góp ý", "Bỏ qua"]
     pid = int(sent[-1][1][0][0][1].split(":")[1])
-    asyncio.run(fb.on_proposal(pid, True))
+    asyncio.run(fb.on_proposal(pid, "y"))
     assert "báo giá" in store.list_map("keyword")
-    assert "đã được xử lý" in asyncio.run(fb.on_proposal(pid, True))
+    assert "đã được xử lý" in asyncio.run(fb.on_proposal(pid, "y"))
     assert "rồi" in asyncio.run(fb.on_digest_item(item_id, "ok"))
+
+
+def test_feedback_loop_rewrites_lesson_until_accepted(tmp_path):
+    ai = FakeAI()
+    cfg, store, lessons, sent, send, dg = setup(tmp_path, ai)
+    row = store.add_message(msg(text="dc chưa"), "summarized")
+    item_id = store.add_digest_item("Kha Vu hỏi", "...", True, "hỏi tiến độ", [row])
+    fb = Feedback(cfg, store, ai, lessons, send)
+    asyncio.run(fb.on_digest_item(item_id, "bad"))
+    pid = int(sent[-1][1][0][0][1].split(":")[1])
+
+    assert asyncio.run(fb.on_text("không liên quan")) is False  # chưa bấm Góp ý thì không bắt chữ
+    asyncio.run(fb.on_proposal(pid, "f"))
+    assert sent[-1][0] == "Nhập góp ý:"
+    assert asyncio.run(fb.on_text("hỏi tiến độ ngắn trong nhóm thì không cần báo"))
+    _, previous, feedback = ai.lesson_calls[-1]
+    assert previous == "Tin có 'báo giá' là quan trọng" and feedback.startswith("hỏi tiến độ")
+    assert "Viết lại: hỏi tiến độ" in sent[-1][0] and "Sửa thành: không quan trọng" in sent[-1][0]
+    assert "đã được xử lý" in asyncio.run(fb.on_proposal(pid, "y"))  # đề xuất cũ không dùng được nữa
+
+    new_pid = int(sent[-1][1][0][0][1].split(":")[1])
+    asyncio.run(fb.on_proposal(new_pid, "y"))
+    assert lessons.list()[0].endswith("Viết lại: hỏi tiến độ ngắn trong nhóm thì không cần báo")
+    assert store.list_map("keyword") == {}
+
+
+def test_lesson_never_proposes_group_senders_as_vip(tmp_path):
+    ai = FakeAI()
+    cfg, store, lessons, sent, send, dg = setup(tmp_path, ai)
+    rows = [store.add_message(msg(text="nhóm"), "summarized"),
+            store.add_message(msg(chat_id=7, chat_kind="private", sender_id=7, sender_name="Lan", text="riêng"),
+                              "summarized")]
+    item_id = store.add_digest_item("x", "...", False, "", rows)
+    fb = Feedback(cfg, store, ai, lessons, send)
+    asyncio.run(fb.on_digest_item(item_id, "bad"))
+    senders, _, _ = ai.lesson_calls[-1]
+    assert senders == ["7: Lan"]
 
 
 def test_chunking_respects_size(tmp_path):

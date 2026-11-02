@@ -21,10 +21,10 @@ def find_keyword(text: str, keywords: list[str]) -> str | None:
 
 
 def match_rules(msg: Incoming, vip_ids: dict[str, str], keywords: list[str]) -> RuleHit | None:
-    """vip_ids: {id dạng chuỗi: tên hiển thị} của người hoặc nhóm VIP."""
-    for key in (msg.sender_id, msg.chat_id):
-        if key is not None and str(key) in vip_ids:
-            return RuleHit("vip", str(key), f"VIP: {vip_ids[str(key)]}")
+    """vip_ids: {id dạng chuỗi: tên hiển thị} của người VIP. VIP chỉ áp dụng cho tin nhắn riêng."""
+    key = str(msg.sender_id)
+    if msg.chat_kind == "private" and key in vip_ids:
+        return RuleHit("vip", key, f"VIP: {vip_ids[key]}")
 
     if msg.mentioned:
         return RuleHit("mention", "", "Bạn được nhắc tên hoặc được trả lời")

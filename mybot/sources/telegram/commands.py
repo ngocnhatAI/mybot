@@ -20,7 +20,7 @@ log = logging.getLogger(__name__)
 
 HELP = """<b>Theo dõi Telegram</b>
 /vip list | add &lt;tên, @username hoặc id&gt; | remove &lt;số hoặc tên&gt;
-  Tin từ người/nhóm VIP được báo ngay.
+  Tin nhắn riêng từ người VIP được báo ngay (tin trong nhóm thì không).
 /keyword list | add &lt;từ khóa&gt; | remove &lt;số hoặc từ&gt;  (viết tắt /kw)
   Tin có từ khóa được báo ngay.
 /ignore list | add &lt;tên nhóm/người&gt; | remove &lt;số hoặc tên&gt;
@@ -68,8 +68,8 @@ class TelegramCommands:
         return await self.feedback.on_digest_item(int(item_id), verdict), False
 
     async def _on_proposal(self, rest: str):
-        pid, yn = rest.split(":")
-        return await self.feedback.on_proposal(int(pid), yn == "y"), True
+        pid, action = rest.split(":")
+        return await self.feedback.on_proposal(int(pid), action), True
 
     async def _on_notification(self, rest: str):
         row_id, verdict = rest.split(":")
@@ -125,6 +125,12 @@ class TelegramCommands:
             return
 
         matches = await self._resolve(value)
+        if kind == "vip":
+            people = [m for m in matches if not m[0].startswith("-")]
+            if matches and not people:
+                await self.send("VIP chỉ áp dụng cho người (tin nhắn riêng), không thêm nhóm hoặc kênh.")
+                return
+            matches = people
         if not matches:
             await self.send("Không tìm thấy người hoặc nhóm nào khớp. Thử @username hoặc tên đầy đủ hơn.")
         elif len(matches) == 1:

@@ -1,0 +1,273 @@
+"""Bot điều khiển: gửi thông báo cho bạn và nhận lệnh. Chỉ phục vụ đúng tài khoản của bạn."""
+
+import itertools
+import logging
+from datetime import datetime
+from html import escape
+
+from telethon import Button, events, utils
+
+from .config import Config
+from .digest import get_schedule
+from .feedback import Feedback
+from .lessons import Lessons
+from .rules import normalize
+from .schedule import MODES, RestSchedule, parse_hhmm
+from .storage import Storage
+
+log = logging.getLogger(__name__)
+
+HELP = """<b>Các lệnh</b>
+
+/vip list | add &lt;tên, @username hoặc id&gt; | remove &lt;số hoặc tên&gt;
+  Tin từ người/nhóm VIP được báo ngay.
+/keyword list | add &lt;từ khóa&gt; | remove &lt;số hoặc từ&gt;  (viết tắt /kw)
+  Tin có từ khóa được báo ngay.
+/ignore list | add &lt;tên nhóm/người&gt; | remove &lt;số hoặc tên&gt;
+  Bỏ qua hẳn chat: không đọc, không tóm tắt, không gửi AI.
+/schedule  — xem giờ nghỉ
+/schedule 17:30 08:00 notify|hold  — đặt giờ nghỉ hằng ngày
+  notify: tin quan trọng vẫn báo ngay · hold: giữ tới cuối giờ nghỉ
+/schedule off  — tắt giờ nghỉ
+/lessons  — xem bài học · /lessons remove &lt;số&gt;
+/status  — tình trạng bot và chi phí AI
+"""
+
+LIST_NAMES = {"vip": "VIP", "keyword": "Từ khóa", "ignore": "Chat bỏ qua"}
+
+
+class Commands:
+    def __init__(self, cfg: Config, bot, user, owner_id: int, store: Storage, lessons: Lessons,
+                 feedback: Feedback):
+        self.cfg, self.bot, self.user, self.owner_id = cfg, bot, user, owner_id
+        self.store, self.lessons, self.feedback = store, lessons, feedback
+        self._picks: dict[int, tuple[str, str, str]] = {}
+        self._pick_ids = itertools.count(1)
+
+    # ---------- gửi ----------
+    async def send(self, text: str, buttons=None) -> None:
+        tg_buttons = [[Button.inline(lbl, data.encode()) for lbl, data in row] for row in buttons] if buttons else None
+        try:
+            await self.bot.send_message(self.owner_id, text, parse_mode="html", buttons=tg_buttons,
+                                        link_preview=False)
+        except (ValueError, TypeError) as e:
+            log.error("Không gửi được cho bạn (%s). Hãy mở bot trên Telegram và bấm Start.", e)
+
+    # ---------- đăng ký handler ----------
+    def register(self) -> None:
+        self.bot.add_event_handler(self.on_command, events.NewMessage(pattern=r"^/"))
+        self.bot.add_event_handler(self.on_callback, events.CallbackQuery())
+
+    async def on_command(self, event) -> None:
+        if event.sender_id != self.owner_id:
+            return
+        parts = event.raw_text.strip().split(maxsplit=2)
+        cmd = parts[0].split("@")[0].lower()
+        args = parts[1:]
+        try:
+            handler = {
+                "/start": self.cmd_help, "/help": self.cmd_help,
+                "/vip": lambda a: self.cmd_list("vip", a),
+                "/keyword": lambda a: self.cmd_list("keyword", a),
+                "/kw": lambda a: self.cmd_list("keyword", a),
+                "/ignore": lambda a: self.cmd_list("ignore", a),
+                "/schedule": self.cmd_schedule,
+                "/lessons": self.cmd_lessons,
+                "/status": self.cmd_status,
+            }.get(cmd)
+            if handler is None:
+                await self.send("Không có lệnh này. Gõ /help để xem danh sách.")
+                return
+            await handler(args)
+        except Exception:
+            log.exception("Lỗi khi chạy lệnh %s", cmd)
+            await self.send("Có lỗi khi chạy lệnh, xem log của bot để biết chi tiết.")
+
+    async def on_callback(self, event) -> None:
+        if event.sender_id != self.owner_id:
+            return
+        data = event.data.decode()
+        kind, _, rest = data.partition(":")
+        remove_buttons = True
+        try:
+            if kind == "di":
+                item_id, verdict = rest.split(":")
+                answer = await self.feedback.on_digest_item(int(item_id), verdict)
+                remove_buttons = False
+            elif kind == "lp":
+                pid, yn = rest.split(":")
+                answer = await self.feedback.on_proposal(int(pid), yn == "y")
+            elif kind == "nf":
+                row_id, verdict = rest.split(":")
+                answer = await self.feedback.on_notification(int(row_id), verdict)
+            elif kind == "rm":
+                list_kind, row_id = rest.split(":")
+                answer = await self.feedback.on_remove_rule(list_kind, int(row_id))
+            elif kind == "pk":
+                answer = self._apply_pick(int(rest))
+            else:
+                answer = "OK"
+        except Exception:
+            log.exception("Lỗi khi xử lý nút %s", data)
+            answer = "Có lỗi, xem log của bot."
+        await event.answer(answer[:190])
+        if remove_buttons:
+            try:
+                msg = await event.get_message()
+                await msg.edit(f"{msg.text}\n\n<i>→ {escape(answer)}</i>", parse_mode="html", buttons=None)
+            except Exception:
+                log.debug("Không sửa được tin chứa nút", exc_info=True)
+
+    # ---------- /vip /keyword /ignore ----------
+    async def cmd_list(self, kind: str, args: list[str]) -> None:
+        action = args[0].lower() if args else "list"
+        value = args[1].strip() if len(args) > 1 else ""
+        items = self.store.list_items(kind)
+
+        if action == "list":
+            if not items:
+                await self.send(f"{LIST_NAMES[kind]}: (trống)")
+                return
+            lines = [f"{i}. {escape(label)}" + (f" <code>{key}</code>" if kind != "keyword" else "")
+                     for i, (key, label) in enumerate(items, 1)]
+            await self.send(f"<b>{LIST_NAMES[kind]}</b>\n" + "\n".join(lines))
+            return
+
+        if not value:
+            await self.send(f"Thiếu giá trị. Ví dụ: /{kind} {action} ...")
+            return
+
+        if action == "remove":
+            target = None
+            if value.isdigit() and 1 <= int(value) <= len(items):
+                target = items[int(value) - 1]
+            else:
+                matches = [it for it in items if normalize(value) in normalize(it[1]) or value == it[0]]
+                target = matches[0] if len(matches) == 1 else None
+            if not target:
+                await self.send("Không tìm thấy hoặc khớp nhiều mục. Dùng số thứ tự trong lệnh list.")
+                return
+            self.store.list_remove(kind, target[0])
+            await self.send(f"Đã bỏ khỏi {LIST_NAMES[kind]}: {escape(target[1])}")
+            return
+
+        if action != "add":
+            await self.send("Dùng: list, add hoặc remove. Gõ /help để xem ví dụ.")
+            return
+
+        if kind == "keyword":
+            added = self.store.list_add("keyword", value.casefold(), value)
+            await self.send(f"Đã thêm từ khóa: {escape(value)}" if added else "Từ khóa này đã có.")
+            return
+
+        matches = await self._resolve(value)
+        if not matches:
+            await self.send("Không tìm thấy người hoặc nhóm nào khớp. Thử @username hoặc tên đầy đủ hơn.")
+        elif len(matches) == 1:
+            peer_id, name = matches[0]
+            added = self.store.list_add(kind, peer_id, name)
+            await self.send(f"Đã thêm vào {LIST_NAMES[kind]}: {escape(name)}" if added else "Mục này đã có.")
+        else:
+            rows = []
+            for peer_id, name in matches[:8]:
+                token = next(self._pick_ids)
+                self._picks[token] = (kind, peer_id, name)
+                rows.append([(name[:60], f"pk:{token}")])
+            await self.send(f"Có nhiều kết quả, chọn một để thêm vào {LIST_NAMES[kind]}:", rows)
+
+    def _apply_pick(self, token: int) -> str:
+        pick = self._picks.pop(token, None)
+        if not pick:
+            return "Lựa chọn đã hết hạn, hãy gõ lại lệnh."
+        kind, peer_id, name = pick
+        added = self.store.list_add(kind, peer_id, name)
+        return f"Đã thêm vào {LIST_NAMES[kind]}: {name}" if added else "Mục này đã có."
+
+    async def _resolve(self, query: str) -> list[tuple[str, str]]:
+        """Tìm người/nhóm theo @username, id hoặc một phần tên trong danh sách chat của bạn."""
+        q = query.strip()
+        if q.startswith("@") or "t.me/" in q or q.lstrip("-").isdigit():
+            try:
+                ent = await self.user.get_entity(int(q) if q.lstrip("-").isdigit() else q)
+                return [(str(utils.get_peer_id(ent)), utils.get_display_name(ent))]
+            except (ValueError, TypeError):
+                return []
+        nq = normalize(q)
+        found = []
+        async for d in self.user.iter_dialogs(limit=1000):
+            if d.name and nq in normalize(d.name):
+                found.append((str(d.id), d.name))
+        exact = [f for f in found if normalize(f[1]) == nq]
+        return exact or found
+
+    # ---------- /schedule ----------
+    async def cmd_schedule(self, args: list[str]) -> None:
+        sched = get_schedule(self.store)
+        if not args:
+            if not sched:
+                await self.send("Chưa đặt giờ nghỉ. Ví dụ: /schedule 17:30 08:00 hold")
+            else:
+                await self.send(f"Giờ nghỉ hằng ngày: <b>{sched.label()}</b>, chế độ <b>{sched.mode}</b>.")
+            return
+        if args[0].lower() == "off":
+            self.store.set_setting("schedule", None)
+            await self.send("Đã tắt giờ nghỉ.")
+            return
+        tokens = " ".join(args).split()
+        try:
+            start, end = parse_hhmm(tokens[0]), parse_hhmm(tokens[1])
+        except (ValueError, IndexError):
+            await self.send("Sai cú pháp. Ví dụ: /schedule 17:30 08:00 hold")
+            return
+        mode = tokens[2].lower() if len(tokens) > 2 else (sched.mode if sched else "notify")
+        if mode not in MODES or start == end:
+            await self.send("Chế độ phải là notify hoặc hold, và giờ bắt đầu khác giờ kết thúc.")
+            return
+        new = RestSchedule(start, end, mode)
+        self.store.set_setting("schedule", new.to_dict())
+        explain = ("tin quan trọng vẫn báo ngay" if mode == "notify"
+                   else "tin quan trọng được giữ tới cuối giờ nghỉ")
+        await self.send(f"Đã đặt giờ nghỉ <b>{new.label()}</b> hằng ngày; {explain}. "
+                        "Cuối giờ nghỉ bot gửi một bản tóm tắt toàn bộ.")
+
+    # ---------- /lessons ----------
+    async def cmd_lessons(self, args: list[str]) -> None:
+        if args and args[0].lower() == "remove":
+            if len(args) < 2 or not args[1].strip().isdigit():
+                await self.send("Dùng: /lessons remove <số>")
+                return
+            removed = self.lessons.remove(int(args[1]))
+            await self.send(f"Đã xóa: {escape(removed)}" if removed else "Không có bài học số này.")
+            return
+        items = self.lessons.list()
+        if not items:
+            await self.send("Chưa có bài học nào. Bài học được tạo khi bạn bấm ❌ Sai nhãn rồi Đồng ý.")
+            return
+        await self.send("<b>Bài học</b> (file data/lessons.md)\n"
+                        + "\n".join(f"{i}. {escape(t)}" for i, t in enumerate(items, 1)))
+
+    # ---------- /status ----------
+    async def cmd_status(self, _args) -> None:
+        tz = self.cfg.timezone
+        now = datetime.now(tz)
+        today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        month = today.replace(day=1)
+        counts = self.store.message_counts_since(today)
+        calls_d, in_d, out_d = self.store.usage_since(today)
+        calls_m, in_m, out_m = self.store.usage_since(month)
+        p_in, p_out = self.cfg.ai.price_input_per_mtok, self.cfg.ai.price_output_per_mtok
+        cost = lambda i, o: (i * p_in + o * p_out) / 1_000_000
+        sched = get_schedule(self.store)
+        state = "đang nghỉ" if sched and sched.is_resting(now) else "đang làm việc"
+        await self.send(
+            f"<b>Tình trạng</b> ({state})\n"
+            f"Hôm nay: {sum(counts.values())} tin · báo ngay {counts.get('notified', 0)} · "
+            f"chờ tóm tắt {counts.get('pending', 0)} · giữ trong giờ nghỉ {counts.get('held', 0)}\n"
+            f"AI hôm nay: {calls_d} lần · ~{cost(in_d, out_d):.3f} USD\n"
+            f"AI tháng này: {calls_m} lần · ~{cost(in_m, out_m):.2f} USD\n"
+            f"VIP: {len(self.store.list_items('vip'))} · Từ khóa: {len(self.store.list_items('keyword'))} · "
+            f"Bỏ qua: {len(self.store.list_items('ignore'))} · Bài học: {len(self.lessons.list())}\n"
+            f"Giờ nghỉ: {f'{sched.label()} ({sched.mode})' if sched else 'chưa đặt'}")
+
+    async def cmd_help(self, _args) -> None:
+        await self.send(HELP)

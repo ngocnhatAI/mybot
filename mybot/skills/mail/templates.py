@@ -8,7 +8,7 @@
     ---
     Kính gửi {Tên khách}, ...
 
-Chỗ cần điền viết trong ngoặc nhọn {...}. Để trống `to:` thì bot sẽ hỏi người nhận.
+Chỗ cần điền viết trong ngoặc nhọn {...}. `to:` / `cc:` là người nhận mặc định: bot luôn hỏi lại, bấm Giữ nguyên hoặc gõ thêm.
 Ô kiểu ngày viết {Tên:ngày}: bot hỏi ngày bắt đầu và ngày kết thúc (xem dates.py).
 Ô lựa chọn viết {Tên|Lựa chọn 1|Lựa chọn 2}: bot hiện các nút để bấm chọn.
 Cùng một tên xuất hiện nhiều chỗ (tiêu đề và nội dung) thì chỉ hỏi một lần.
@@ -62,13 +62,8 @@ class Template:
 
     @property
     def fields(self) -> list[str]:
-        """Những gì bot cần hỏi: người nhận và CC (nếu template để trống `to:`), rồi tới các chỗ trống."""
-        return ([] if self.to else [TO_FIELD, CC_FIELD]) + self.placeholders
-
-    @property
-    def editable_fields(self) -> list[str]:
-        """Những gì sửa được ở bước xem trước: luôn sửa được CC."""
-        return self.fields + ([] if CC_FIELD in self.fields else [CC_FIELD])
+        """Những gì bot hỏi: người nhận, CC (to/cc trong template là mặc định), rồi tới các chỗ trống."""
+        return [TO_FIELD, CC_FIELD] + self.placeholders
 
 
 def parse_addresses(text: str) -> list[str]:

@@ -39,7 +39,7 @@ def test_parse_template_and_placeholders_in_order():
     t = parse_template("baogia", TPL)
     assert t.to == ["khach@abc.com"] and t.cc == ["sep@gmail.com"]
     assert t.placeholders == ["Dự án", "Tên khách", "Số tiền"]
-    assert t.fields == t.placeholders
+    assert t.fields == [TO_FIELD, CC_FIELD] + t.placeholders
     assert render(t.subject, {"Dự án": "VR"}) == "Báo giá VR"
 
 
@@ -92,7 +92,10 @@ def test_full_flow_pick_fill_preview_send(tmp_path):
     run(c.cmd_mail())
     assert len(out[-1][1]) == 2  # 2 nút template
     run(c.on_button("p:0"))  # baogia
-    assert "(1/3)" in out[-1][0] and "Dự án" in out[-1][0]
+    assert "khach@abc.com" in out[-1][0] and out[-1][1][0] == [("✅ Giữ nguyên", "ml:keep")]
+    run(c.on_button("keep"))  # người nhận mặc định
+    run(c.on_text("-"))  # CC mặc định (gõ - giống Enter)
+    assert "(3/5)" in out[-1][0] and "Dự án" in out[-1][0]
     for answer in ["VR Studio", "anh Minh", "50 triệu"]:
         assert run(c.on_text(answer))
     preview = out[-1][0]
@@ -116,8 +119,8 @@ def test_asks_recipient_and_validates_it(tmp_path):
     run(c.on_text("khong-phai-email"))
     assert "không hợp lệ" in out[-1][0]
     run(c.on_text("ban@x.com"))
-    assert out[-1][1] == [[("Không CC", "ml:nocc")]]
-    run(c.on_button("nocc"))
+    assert out[-1][1] == [[("Không CC", "ml:keep")]]
+    run(c.on_button("keep"))
     run(c.on_text("Lan"))
     assert "ban@x.com" in out[-1][0]
     run(c.on_button("draft"))
@@ -128,10 +131,10 @@ def test_edit_one_field_returns_to_preview(tmp_path):
     c, out, mails = make(tmp_path)
     run(c.cmd_mail())
     run(c.on_button("p:0"))
-    for answer in ["VR", "Minh", "50 triệu"]:
+    for answer in ["-", "-", "VR", "Minh", "50 triệu"]:
         run(c.on_text(answer))
     run(c.on_button("edit"))
-    run(c.on_button("ef:2"))  # Số tiền
+    run(c.on_button("ef:4"))  # Gửi tới, CC, Dự án, Tên khách, Số tiền
     assert "Hiện tại" in out[-1][0] and "50 triệu" in out[-1][0]
     run(c.on_text("60 triệu"))
     assert "60 triệu" in out[-1][0] and "Xem trước" in out[-1][0]
@@ -231,18 +234,46 @@ def test_choice_field_by_button_and_by_typing(tmp_path):
         encoding="utf-8")
     run(c.cmd_mail())
     run(c.on_button("p:2"))
+    run(c.on_button("keep"))
+    run(c.on_button("keep"))  # không CC
     assert out[-1][1] == [[("Không hưởng lương", "ml:c:0")], [("Nghỉ phép", "ml:c:1")]]
     assert "Hình thức</b>?" in out[-1][0]
     run(c.on_text("linh tinh"))
     assert "Hãy bấm một lựa chọn" in out[-1][0]
     run(c.on_button("c:1"))
     assert "Hình thức: Nghỉ phép" in out[-1][0]
-    # sửa: CC luôn có trong danh sách sửa, kể cả khi template ghi sẵn người nhận
+    # sửa: người nhận và CC luôn có trong danh sách sửa
     run(c.on_button("edit"))
     labels = [r[0][0] for r in out[-1][1]]
-    assert labels[:2] == ["✏️ Hình thức", "✏️ CC (email)"]
+    assert labels[:3] == ["✏️ Gửi tới (email)", "✏️ CC (email)", "✏️ Hình thức"]
     run(c.on_button("ef:1"))
     run(c.on_text("sep@x.com"))
     assert "CC:</b> sep@x.com" in out[-1][0]
     run(c.on_button("send"))
     assert mails[0]["Cc"] == "sep@x.com"
+
+
+def test_default_recipients_keep_add_and_clear(tmp_path):
+    c, out, mails = make(tmp_path)
+    run(c.cmd_mail())
+    run(c.on_button("p:0"))  # baogia: to khach@abc.com, cc sep@gmail.com
+    run(c.on_text("ketoan@abc.com"))  # gõ địa chỉ khác -> thêm vào
+    assert "• sep@gmail.com" in out[-1][0]  # đang hỏi CC, hiện CC mặc định
+    run(c.on_button("clr"))  # xóa hết CC
+    assert out[-1][1] == [[("Không CC", "ml:keep")]]
+    run(c.on_text("hr@abc.com"))
+    for answer in ["VR", "Minh", "50 triệu"]:
+        run(c.on_text(answer))
+    assert "Tới:</b> khach@abc.com, ketoan@abc.com" in out[-1][0]
+    assert "CC:</b> hr@abc.com" in out[-1][0]
+    run(c.on_button("send"))
+    assert mails[0]["To"] == "khach@abc.com, ketoan@abc.com" and mails[0]["Cc"] == "hr@abc.com"
+
+
+def test_cannot_keep_empty_recipient(tmp_path):
+    c, out, mails = make(tmp_path)
+    run(c.cmd_mail())
+    run(c.on_button("p:0"))
+    run(c.on_button("clr"))
+    answer, _ = run(c.on_button("keep"))
+    assert "Chưa có người nhận" in answer and c.draft.queue[0] == TO_FIELD

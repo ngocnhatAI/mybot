@@ -124,8 +124,10 @@ Kính gửi {Tên khách},
   qua tháng `30/10 - 02/11/2026`.
 - **Ô lựa chọn** viết `{Tên|Lựa chọn 1|Lựa chọn 2}`, ví dụ `{Hình thức nghỉ phép|Không hưởng lương|Nghỉ phép}`:
   bot hiện nút để bấm chọn.
-- `to:` để trống → bot hỏi người nhận, rồi hỏi CC (bấm *Không CC* để bỏ qua). Nhiều địa chỉ cách nhau bằng dấu phẩy.
-- Ở bước xem trước, **✏️ Sửa** luôn có mục *CC* để thêm/đổi CC, kể cả với template ghi sẵn người nhận.
+- `to:` / `cc:` là **người nhận mặc định**. Mỗi lần soạn, bot hiện danh sách và hỏi lại:
+  bấm **✅ Giữ nguyên** (hoặc gõ `-`) để dùng; **gõ địa chỉ khác để thêm vào**; bấm **🗑 Xóa hết** để nhập lại từ đầu.
+  Để trống thì bot hỏi bạn gõ (CC có nút *Không CC*). Nhiều địa chỉ cách nhau bằng dấu phẩy.
+- Ở bước xem trước, **✏️ Sửa** có cả mục *Gửi tới* và *CC*.
 - Tên file (bỏ `.md`) là tên template trong danh sách.
 - Lưu file bằng mã hóa **UTF-8** (Notepad mặc định đã là UTF-8).
 

@@ -17,6 +17,7 @@ from ...control.bot import Send
 from ...core.config import MailConfig
 
 PREVIEW_BODY_LIMIT = 3000
+NL = "\n"
 
 HELP = """<b>Soạn email</b>
 /mail  — chọn template rồi bot hỏi lần lượt từng chỗ cần điền
@@ -33,16 +34,12 @@ class Draft:
     starts: dict[str, date] = field(default_factory=dict)  # ngày bắt đầu của ô ngày đang hỏi
     editing: bool = False  # đang sửa một chỗ: trả lời xong thì quay lại xem trước
     busy: bool = False  # đang gửi / lưu nháp: chặn bấm hai lần
+    # người nhận / CC: khởi tạo từ template (mặc định), bạn giữ nguyên, gõ thêm hoặc xóa hết
+    to: list[str] = field(default_factory=list)
+    cc: list[str] = field(default_factory=list)
 
-    @property
-    def to(self) -> list[str]:
-        return self.template.to or parse_addresses(self.values.get(TO_FIELD, ""))
-
-    @property
-    def cc(self) -> list[str]:
-        if CC_FIELD in self.values:
-            return parse_addresses(self.values[CC_FIELD])
-        return self.template.cc
+    def recipients(self, name: str) -> list[str]:
+        return self.to if name == TO_FIELD else self.cc
 
     @property
     def subject(self) -> str:
@@ -112,7 +109,7 @@ class MailComposer:
             return "Đã hủy, không gửi gì.", True
         if action == "edit":
             rows = [[(f"✏️ {field_label(name)}"[:60], f"ml:ef:{i}")]
-                    for i, name in enumerate(d.template.editable_fields)]
+                    for i, name in enumerate(d.template.fields)]
             rows.append([("↩️ Quay lại xem trước", "ml:back")])
             await self.send("Chọn chỗ cần sửa:", rows)
             return "Chọn chỗ cần sửa", True
@@ -121,10 +118,19 @@ class MailComposer:
                 await self.on_text("-")
                 return "Nghỉ 1 ngày", True
             return "OK", True
-        if action == "nocc":
-            if d.queue and d.queue[0] == CC_FIELD:
-                await self.on_text("-")
-                return "Không CC", True
+        if action == "keep":
+            if d.queue and d.queue[0] in (TO_FIELD, CC_FIELD):
+                name = d.queue[0]
+                if name == TO_FIELD and not d.to:
+                    return "Chưa có người nhận nào, hãy gõ địa chỉ email.", False
+                await self._advance()
+                return ", ".join(d.recipients(name)) or "Không CC", True
+            return "OK", True
+        if action == "clr":
+            if d.queue and d.queue[0] in (TO_FIELD, CC_FIELD):
+                d.recipients(d.queue[0]).clear()
+                await self._ask(d.queue[0])
+                return "Đã xóa hết, nhập lại", True
             return "OK", True
         if action == "c":
             if d.queue and choices(d.queue[0]):
@@ -134,7 +140,7 @@ class MailComposer:
                     return opts[int(arg)], True
             return "OK", True
         if action == "ef":
-            name = d.template.editable_fields[int(arg)]
+            name = d.template.fields[int(arg)]
             d.queue, d.editing = steps_for(name), True
             await self._ask(d.queue[0])
             return f"Sửa: {field_label(name)}", True
@@ -151,7 +157,8 @@ class MailComposer:
         tpl = next((t for t in templates if t.key == key), None)
         if not tpl:
             return "Template không còn hoặc đang lỗi, gõ /mail lại."
-        self.draft = Draft(tpl, queue=[s for f in tpl.fields for s in steps_for(f)])
+        self.draft = Draft(tpl, queue=[s for f in tpl.fields for s in steps_for(f)],
+                           to=list(tpl.to), cc=list(tpl.cc))
         if self.draft.queue:
             await self._ask(self.draft.queue[0])
         else:
@@ -166,15 +173,21 @@ class MailComposer:
         step = d.queue[0]
         name, _, part = step.partition("#")
         if name in (TO_FIELD, CC_FIELD):
-            if name == CC_FIELD and dates.is_skip(text):
-                text = ""
+            current = d.recipients(name)
+            if dates.is_skip(text):  # "-" giống bấm Enter: giữ nguyên danh sách hiện tại
+                if name == TO_FIELD and not current:
+                    await self.send("Chưa có người nhận nào, hãy gõ địa chỉ email:")
+                    return True
+                await self._advance()
+                return True
             try:
-                if name == TO_FIELD and not parse_addresses(text):
-                    raise TemplateError("chưa nhập địa chỉ")
-                parse_addresses(text)
+                added = parse_addresses(text)
             except TemplateError as e:
                 await self.send(f"{escape(str(e))}. Nhập lại địa chỉ email (nhiều địa chỉ thì cách nhau bằng dấu phẩy):")
                 return True
+            current.extend(a for a in added if a.lower() not in {c.lower() for c in current})
+            await self._advance()
+            return True
         opts = choices(name)
         if opts:
             picked = next((o for o in opts if o.casefold() == text.strip().casefold()), None)
@@ -196,13 +209,18 @@ class MailComposer:
         except dates.DateInputError as e:
             await self.send(f"⚠️ {escape(str(e))}. Nhập lại:")
             return True
+        await self._advance()
+        return True
+
+    async def _advance(self) -> None:
+        """Xong bước hiện tại: hỏi bước tiếp theo, hoặc hiện bản xem trước."""
+        d = self.draft
         d.queue.pop(0)
         if d.queue:
             await self._ask(d.queue[0])
         else:
             d.editing = False
             await self._preview()
-        return True
 
     async def _ask(self, step: str) -> None:
         d = self.draft
@@ -210,18 +228,15 @@ class MailComposer:
         fields = d.template.fields
         pos = f"({fields.index(name) + 1}/{len(fields)}) " if not d.editing and name in fields else ""
         current = d.values.get(name)
-        if current is None and name == CC_FIELD and d.template.cc:
-            current = ", ".join(d.template.cc)
         hint = f"\nHiện tại: <code>{escape(current)}</code>" if current else ""
         title = escape(field_label(name))
         buttons = None
         if choices(name):
             question = f"<b>{title}</b>? Bấm chọn bên dưới."
             buttons = self._choice_buttons(choices(name))
-        elif name == CC_FIELD:
-            question = (f"<b>{title}</b>? Nhiều địa chỉ cách nhau bằng dấu phẩy; "
-                        "không cần CC thì bấm nút bên dưới hoặc gõ -")
-            buttons = [[("Không CC", "ml:nocc")]]
+        elif name in (TO_FIELD, CC_FIELD):
+            question, buttons = self._recipient_question(name, title)
+            hint = ""
         elif part == "start":
             question = f"<b>{title}</b> — ngày bắt đầu? (ví dụ 24/10)"
         elif part == "end":
@@ -232,6 +247,23 @@ class MailComposer:
         else:
             question = f"<b>{title}</b>?"
         await self.send(f"{pos}{question}{hint}\n<i>Gõ /cancel để hủy.</i>", buttons)
+
+    def _recipient_question(self, name: str, title: str):
+        current = self.draft.recipients(name)
+        if current:
+            listed = NL.join(f"• {escape(a)}" for a in current)
+            question = (f"<b>{title}</b>:{NL}{listed}{NL}"
+                        "Bấm <b>Giữ nguyên</b> (hoặc gõ -) để dùng danh sách này; "
+                        "gõ địa chỉ email khác để <b>thêm</b> vào.")
+            buttons = [[("✅ Giữ nguyên", "ml:keep")], [("🗑 Xóa hết, nhập lại", "ml:clr")]]
+        elif name == TO_FIELD:
+            question = f"<b>{title}</b>? Gõ địa chỉ email (nhiều địa chỉ cách nhau bằng dấu phẩy)."
+            buttons = None
+        else:
+            question = (f"<b>{title}</b>? Gõ địa chỉ email để thêm CC, "
+                        "hoặc bấm nút bên dưới (gõ -) nếu không cần CC.")
+            buttons = [[("Không CC", "ml:keep")]]
+        return question, buttons
 
     @staticmethod
     def _choice_buttons(opts: list[str]):

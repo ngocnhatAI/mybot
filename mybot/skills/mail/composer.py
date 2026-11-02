@@ -1,0 +1,185 @@
+"""Hội thoại soạn email: chọn template → hỏi từng chỗ trống → xem trước → Gửi / Sửa / Lưu nháp / Hủy.
+
+Không dùng AI. Email chỉ được gửi khi bạn bấm nút Gửi.
+"""
+
+import asyncio
+from dataclasses import dataclass, field
+from html import escape
+from pathlib import Path
+from typing import Callable
+
+from . import sender
+from .templates import TO_FIELD, Template, TemplateError, load_templates, parse_addresses, render
+from ...control.bot import Send
+from ...core.config import MailConfig
+
+PREVIEW_BODY_LIMIT = 3000
+
+HELP = """<b>Soạn email</b>
+/mail  — chọn template rồi bot hỏi lần lượt từng chỗ cần điền
+/cancel  — hủy email đang soạn
+Template là các file .md trong thư mục data/templates/ trên máy."""
+
+
+@dataclass
+class Draft:
+    template: Template
+    values: dict[str, str] = field(default_factory=dict)
+    queue: list[str] = field(default_factory=list)  # các chỗ còn phải hỏi
+    editing: bool = False  # đang sửa một chỗ: trả lời xong thì quay lại xem trước
+    busy: bool = False  # đang gửi / lưu nháp: chặn bấm hai lần
+
+    @property
+    def to(self) -> list[str]:
+        return self.template.to or parse_addresses(self.values.get(TO_FIELD, ""))
+
+    @property
+    def subject(self) -> str:
+        return render(self.template.subject, self.values)
+
+    @property
+    def body(self) -> str:
+        return render(self.template.body, self.values)
+
+
+class MailComposer:
+    def __init__(self, cfg: MailConfig, templates_dir: Path, send: Send,
+                 send_mail: Callable = sender.send, save_draft: Callable = sender.save_draft):
+        self.cfg, self.templates_dir, self.send = cfg, templates_dir, send
+        self._send_mail, self._save_draft = send_mail, save_draft
+        self.draft: Draft | None = None
+        self._listing: list[str] = []
+
+    def register(self, controller) -> None:
+        controller.add_command(["/mail"], self.cmd_mail)
+        controller.add_command(["/cancel"], self.cmd_cancel)
+        controller.add_callback("ml", self.on_button)
+        controller.add_text_handler(self.on_text)
+        controller.add_help(HELP)
+
+    # ---------- lệnh ----------
+    async def cmd_mail(self, _args=None) -> None:
+        templates, errors = load_templates(self.templates_dir)
+        warn = ("\n\n⚠️ Template lỗi, bị bỏ qua:\n" + "\n".join(f"• {escape(e)}" for e in errors)) if errors else ""
+        if not templates:
+            await self.send("Chưa có template nào. Thêm file .md vào thư mục data/templates/ "
+                            "(xem file mau-bao-gia.md để làm theo)." + warn)
+            return
+        self._listing = [t.key for t in templates]
+        rows = [[(f"📄 {t.key} — {t.subject}"[:60], f"ml:p:{i}")] for i, t in enumerate(templates)]
+        await self.send("<b>Chọn template để soạn email:</b>" + warn, rows)
+
+    async def cmd_cancel(self, _args=None) -> None:
+        if not self.draft:
+            await self.send("Không có email nào đang soạn.")
+            return
+        self.draft = None
+        await self.send("Đã hủy email đang soạn.")
+
+    # ---------- nút bấm ----------
+    async def on_button(self, rest: str) -> tuple[str, bool]:
+        action, _, arg = rest.partition(":")
+        if action == "p":
+            return await self._pick(int(arg)), True
+        d = self.draft
+        if not d:
+            return "Email này đã được gửi, lưu hoặc hủy rồi.", True
+        if d.busy:
+            return "Đang xử lý, chờ chút…", False
+        if action == "send":
+            return await self._deliver(self._send_mail, "Đã gửi"), True
+        if action == "draft":
+            return await self._deliver(self._save_draft, "Đã lưu vào Nháp của Gmail"), True
+        if action == "cancel":
+            self.draft = None
+            return "Đã hủy, không gửi gì.", True
+        if action == "edit":
+            rows = [[(f"✏️ {name}"[:60], f"ml:ef:{i}")] for i, name in enumerate(d.template.fields)]
+            rows.append([("↩️ Quay lại xem trước", "ml:back")])
+            await self.send("Chọn chỗ cần sửa:", rows)
+            return "Chọn chỗ cần sửa", True
+        if action == "ef":
+            fields = d.template.fields
+            name = fields[int(arg)]
+            d.queue, d.editing = [name], True
+            await self._ask(name)
+            return f"Sửa: {name}", True
+        if action == "back":
+            await self._preview()
+            return "OK", True
+        return "OK", True
+
+    async def _pick(self, index: int) -> str:
+        if not 0 <= index < len(self._listing):
+            return "Danh sách đã cũ, gõ /mail lại."
+        key = self._listing[index]
+        templates, _ = load_templates(self.templates_dir)
+        tpl = next((t for t in templates if t.key == key), None)
+        if not tpl:
+            return "Template không còn hoặc đang lỗi, gõ /mail lại."
+        self.draft = Draft(tpl, queue=list(tpl.fields))
+        if self.draft.queue:
+            await self._ask(self.draft.queue[0])
+        else:
+            await self._preview()
+        return f"Soạn theo template {key}"
+
+    # ---------- trả lời chữ ----------
+    async def on_text(self, text: str) -> bool:
+        d = self.draft
+        if not d or not d.queue:
+            return False
+        name = d.queue[0]
+        if name == TO_FIELD:
+            try:
+                if not parse_addresses(text):
+                    raise TemplateError("chưa nhập địa chỉ")
+            except TemplateError as e:
+                await self.send(f"{escape(str(e))}. Nhập lại địa chỉ email (nhiều địa chỉ thì cách nhau bằng dấu phẩy):")
+                return True
+        d.values[name] = text.strip()
+        d.queue.pop(0)
+        if d.queue:
+            await self._ask(d.queue[0])
+        else:
+            d.editing = False
+            await self._preview()
+        return True
+
+    async def _ask(self, name: str) -> None:
+        d = self.draft
+        fields = d.template.fields
+        pos = f"({fields.index(name) + 1}/{len(fields)}) " if not d.editing else ""
+        current = d.values.get(name)
+        hint = f"\nHiện tại: <code>{escape(current)}</code>" if current else ""
+        await self.send(f"{pos}<b>{escape(name)}</b>?{hint}\n<i>Gõ /cancel để hủy.</i>")
+
+    async def _preview(self) -> None:
+        d = self.draft
+        body = d.body
+        if len(body) > PREVIEW_BODY_LIMIT:
+            body = body[:PREVIEW_BODY_LIMIT] + "\n…(còn tiếp)"
+        cc = f"\n<b>CC:</b> {escape(', '.join(d.template.cc))}" if d.template.cc else ""
+        await self.send(
+            f"📧 <b>Xem trước email</b>\n"
+            f"<b>Từ:</b> {escape(self.cfg.address)}\n"
+            f"<b>Tới:</b> {escape(', '.join(d.to))}{cc}\n"
+            f"<b>Tiêu đề:</b> {escape(d.subject)}\n\n"
+            f"{escape(body)}",
+            [[("✉️ Gửi", "ml:send"), ("✏️ Sửa", "ml:edit")],
+             [("📝 Lưu nháp", "ml:draft"), ("❌ Hủy", "ml:cancel")]])
+
+    async def _deliver(self, action: Callable, done_text: str) -> str:
+        d = self.draft
+        d.busy = True
+        try:
+            msg = sender.build_message(self.cfg, d.to, d.template.cc, d.subject, d.body)
+            await asyncio.to_thread(action, self.cfg, msg)
+        except sender.MailError as e:
+            d.busy = False
+            await self.send(f"⚠️ {escape(str(e))}\nEmail vẫn được giữ, bạn có thể bấm lại.")
+            await self._preview()
+            return "Không thành công"
+        self.draft = None
+        return f"{done_text}: {', '.join(d.to)}"

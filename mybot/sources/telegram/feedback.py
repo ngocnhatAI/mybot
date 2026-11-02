@@ -5,11 +5,11 @@ from datetime import datetime
 from html import escape
 
 from . import formatting as fmt
-from .ai import AI, format_message_line
-from .config import Config
-from .digest import Send
-from .lessons import Lessons
-from .storage import Storage
+from ...control.bot import Send
+from ...core.ai import AI, format_message_line
+from ...core.config import Config
+from ...core.lessons import Lessons
+from ...core.storage import Storage
 
 KIND_TEXT = {
     "note": "Ghi chú cho AI (ghi vào lessons.md, ảnh hưởng cách gán nhãn trong bản tóm tắt)",

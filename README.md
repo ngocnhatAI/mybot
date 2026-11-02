@@ -1,6 +1,8 @@
-# mybot — trợ lý Telegram cá nhân
+# mybot — trợ lý cá nhân qua Telegram
 
-Bot đọc tin nhắn Telegram trên tài khoản của bạn:
+Hai phần: **theo dõi Telegram** và **soạn email theo template** (xem mục *Soạn email* bên dưới).
+
+Phần theo dõi Telegram đọc tin nhắn trên tài khoản của bạn:
 
 - **Báo ngay** tin quan trọng theo luật: người/nhóm **VIP**, bạn **bị nhắc tên hoặc được trả lời**, tin có **từ khóa**.
 - Mọi tin khác được gom lại, **15 phút một lần** (đổi bằng `/interval`) gửi Claude Haiku 5.5 tóm tắt theo đầu mục. Mỗi đầu mục có nhãn ⭐ quan trọng / ▫️ không quan trọng và nút ✅ Đúng / ❌ Sai nhãn.
@@ -88,10 +90,62 @@ Mỗi dòng bắt đầu bằng `- ` là một bài học AI dùng khi gán nhã
 trực tiếp; thay đổi có hiệu lực từ bản tóm tắt kế tiếp. Bài học dạng *thêm từ khóa / VIP* không nằm
 trong file này mà vào danh sách `/keyword`, `/vip`.
 
+## Soạn email
+
+### Bật lần đầu
+1. Bật **xác minh 2 bước** cho tài khoản Google: https://myaccount.google.com/signinoptions/twosv
+2. Tạo **App Password**: https://myaccount.google.com/apppasswords → đặt tên `mybot` → Google hiện mật khẩu 16 ký tự.
+3. Thêm vào `.env`:
+   ```
+   GMAIL_ADDRESS=ban@gmail.com
+   GMAIL_APP_PASSWORD=abcd efgh ijkl mnop
+   ```
+4. `docker compose up -d --build`. Bot báo "✅ Bot đã chạy (theo dõi Telegram, soạn email)".
+
+App Password có **toàn quyền vào hộp thư** — không chia sẻ. Bị lộ thì vào lại trang ở bước 2 để xóa.
+
+### Template
+Mỗi file `.md` trong `data/templates/` là một template (lần đầu bot tạo sẵn `mau-bao-gia.md` để làm theo):
+
+```
+---
+to: khach@abc.com
+cc: sep@gmail.com
+subject: Báo giá dự án {Tên dự án}
+---
+Kính gửi {Tên khách},
+...
+```
+
+- Chỗ cần điền viết trong `{...}`; bot hỏi lần lượt theo thứ tự xuất hiện (tiêu đề trước).
+- `to:` để trống → bot hỏi người nhận. Nhiều địa chỉ cách nhau bằng dấu phẩy.
+- Tên file (bỏ `.md`) là tên template trong danh sách.
+- Lưu file bằng mã hóa **UTF-8** (Notepad mặc định đã là UTF-8).
+
+### Dùng trong bot
+1. Gõ `/mail` → bấm chọn template.
+2. Trả lời lần lượt từng câu hỏi (`/cancel` để hủy).
+3. Xem trước → **✉️ Gửi** · **✏️ Sửa** (chọn chỗ cần sửa) · **📝 Lưu nháp** (vào Nháp của Gmail) · **❌ Hủy**.
+
+Email **chỉ được gửi khi bạn bấm ✉️ Gửi**.
+
 ## Cấu hình `config.yaml`
 
 Múi giờ, chu kỳ tóm tắt (mặc định 15 phút), số ngày giữ lịch sử, đoạn mô tả về bạn (`about_me`) để AI
-hiểu điều gì quan trọng, model AI. Sửa xong chạy `docker compose restart`.
+hiểu điều gì quan trọng, model AI, tên người gửi email (`mail.from_name`). Sửa xong chạy `docker compose restart`.
+
+## Cấu trúc code
+
+```
+mybot/
+├── core/              dùng chung: cấu hình, cơ sở dữ liệu, AI, luật lọc, giờ nghỉ, bài học
+├── control/           bot điều khiển: gửi tin, định tuyến lệnh / nút / tin nhắn chữ
+├── sources/telegram/  theo dõi và tóm tắt tin Telegram
+└── skills/mail/       soạn và gửi email theo template
+```
+
+Thêm tính năng mới: tạo thư mục trong `skills/` (hoặc `sources/` nếu là nguồn tin), viết hàm
+`setup(cfg, controller)` đăng ký lệnh qua `controller.add_command(...)`, rồi gọi nó trong `app.py`.
 
 ## Quyền riêng tư
 

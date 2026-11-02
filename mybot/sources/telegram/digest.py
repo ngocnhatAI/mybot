@@ -3,19 +3,16 @@
 import logging
 import sqlite3
 from datetime import datetime, timedelta
-from typing import Awaitable, Callable
 
 from . import formatting as fmt
-from .ai import AI, DigestItem, format_message_line
-from .config import Config
-from .lessons import Lessons
-from .schedule import RestSchedule
-from .storage import Storage
+from ...control.bot import Send
+from ...core.ai import AI, DigestItem, format_message_line
+from ...core.config import Config
+from ...core.lessons import Lessons
+from ...core.schedule import RestSchedule
+from ...core.storage import Storage
 
 log = logging.getLogger(__name__)
-
-# send(text, buttons): buttons là các hàng nút, mỗi nút là (nhãn, callback_data)
-Send = Callable[[str, list[list[tuple[str, str]]] | None], Awaitable[None]]
 
 ITEMS_PER_MESSAGE = 8
 

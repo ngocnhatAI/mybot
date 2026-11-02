@@ -1,24 +1,24 @@
-"""Bot điều khiển: gửi thông báo cho bạn và nhận lệnh. Chỉ phục vụ đúng tài khoản của bạn."""
+"""Lệnh và nút bấm của phần Telegram: VIP, từ khóa, bỏ qua, chu kỳ, giờ nghỉ, bài học, trạng thái."""
 
 import itertools
 import logging
 from datetime import datetime
 from html import escape
 
-from telethon import Button, events, utils
+from telethon import utils
 
-from .config import Config
 from .digest import MAX_INTERVAL, MIN_INTERVAL, get_interval, get_schedule
 from .feedback import Feedback
-from .lessons import Lessons
-from .rules import normalize
-from .schedule import MODES, RestSchedule, parse_hhmm
-from .storage import Storage
+from ...control.bot import Controller
+from ...core.config import Config
+from ...core.lessons import Lessons
+from ...core.rules import normalize
+from ...core.schedule import MODES, RestSchedule, parse_hhmm
+from ...core.storage import Storage
 
 log = logging.getLogger(__name__)
 
-HELP = """<b>Các lệnh</b>
-
+HELP = """<b>Theo dõi Telegram</b>
 /vip list | add &lt;tên, @username hoặc id&gt; | remove &lt;số hoặc tên&gt;
   Tin từ người/nhóm VIP được báo ngay.
 /keyword list | add &lt;từ khóa&gt; | remove &lt;số hoặc từ&gt;  (viết tắt /kw)
@@ -31,95 +31,56 @@ HELP = """<b>Các lệnh</b>
   notify: tin quan trọng vẫn báo ngay · hold: giữ tới cuối giờ nghỉ
 /schedule off  — tắt giờ nghỉ
 /lessons  — xem bài học · /lessons remove &lt;số&gt;
-/status  — tình trạng bot và chi phí AI
-"""
+/status  — tình trạng bot và chi phí AI"""
 
 LIST_NAMES = {"vip": "VIP", "keyword": "Từ khóa", "ignore": "Chat bỏ qua"}
 
 
-class Commands:
-    def __init__(self, cfg: Config, bot, user, owner_id: int, store: Storage, lessons: Lessons,
+class TelegramCommands:
+    def __init__(self, cfg: Config, controller: Controller, user, store: Storage, lessons: Lessons,
                  feedback: Feedback):
-        self.cfg, self.bot, self.user, self.owner_id = cfg, bot, user, owner_id
+        self.cfg, self.controller, self.user = cfg, controller, user
         self.store, self.lessons, self.feedback = store, lessons, feedback
+        self.send = controller.send
         self._picks: dict[int, tuple[str, str, str]] = {}
         self._pick_ids = itertools.count(1)
 
-    # ---------- gửi ----------
-    async def send(self, text: str, buttons=None) -> None:
-        tg_buttons = [[Button.inline(lbl, data.encode()) for lbl, data in row] for row in buttons] if buttons else None
-        try:
-            await self.bot.send_message(self.owner_id, text, parse_mode="html", buttons=tg_buttons,
-                                        link_preview=False)
-        except (ValueError, TypeError) as e:
-            log.error("Không gửi được cho bạn (%s). Hãy nhắn /start cho bot trên Telegram "
-                      "khi bot đang chạy (chỉ cần làm một lần).", e)
-
-    # ---------- đăng ký handler ----------
     def register(self) -> None:
-        self.bot.add_event_handler(self.on_command, events.NewMessage(pattern=r"^/"))
-        self.bot.add_event_handler(self.on_callback, events.CallbackQuery())
+        c = self.controller
+        c.add_command(["/vip"], lambda a: self.cmd_list("vip", a))
+        c.add_command(["/keyword", "/kw"], lambda a: self.cmd_list("keyword", a))
+        c.add_command(["/ignore"], lambda a: self.cmd_list("ignore", a))
+        c.add_command(["/interval"], self.cmd_interval)
+        c.add_command(["/schedule"], self.cmd_schedule)
+        c.add_command(["/lessons"], self.cmd_lessons)
+        c.add_command(["/status"], self.cmd_status)
+        c.add_callback("di", self._on_digest_item)
+        c.add_callback("lp", self._on_proposal)
+        c.add_callback("nf", self._on_notification)
+        c.add_callback("rm", self._on_remove_rule)
+        c.add_callback("pk", self._on_pick)
+        c.add_help(HELP)
 
-    async def on_command(self, event) -> None:
-        if event.sender_id != self.owner_id:
-            return
-        parts = event.raw_text.strip().split(maxsplit=2)
-        cmd = parts[0].split("@")[0].lower()
-        args = parts[1:]
-        try:
-            handler = {
-                "/start": self.cmd_help, "/help": self.cmd_help,
-                "/vip": lambda a: self.cmd_list("vip", a),
-                "/keyword": lambda a: self.cmd_list("keyword", a),
-                "/kw": lambda a: self.cmd_list("keyword", a),
-                "/ignore": lambda a: self.cmd_list("ignore", a),
-                "/interval": self.cmd_interval,
-                "/schedule": self.cmd_schedule,
-                "/lessons": self.cmd_lessons,
-                "/status": self.cmd_status,
-            }.get(cmd)
-            if handler is None:
-                await self.send("Không có lệnh này. Gõ /help để xem danh sách.")
-                return
-            await handler(args)
-        except Exception:
-            log.exception("Lỗi khi chạy lệnh %s", cmd)
-            await self.send("Có lỗi khi chạy lệnh, xem log của bot để biết chi tiết.")
+    # ---------- nút bấm ----------
+    async def _on_digest_item(self, rest: str):
+        item_id, verdict = rest.split(":")
+        # giữ nút: một tin tóm tắt có nhiều đầu mục
+        return await self.feedback.on_digest_item(int(item_id), verdict), False
 
-    async def on_callback(self, event) -> None:
-        if event.sender_id != self.owner_id:
-            return
-        data = event.data.decode()
-        kind, _, rest = data.partition(":")
-        remove_buttons = True
-        try:
-            if kind == "di":
-                item_id, verdict = rest.split(":")
-                answer = await self.feedback.on_digest_item(int(item_id), verdict)
-                remove_buttons = False
-            elif kind == "lp":
-                pid, yn = rest.split(":")
-                answer = await self.feedback.on_proposal(int(pid), yn == "y")
-            elif kind == "nf":
-                row_id, verdict = rest.split(":")
-                answer = await self.feedback.on_notification(int(row_id), verdict)
-            elif kind == "rm":
-                list_kind, row_id = rest.split(":")
-                answer = await self.feedback.on_remove_rule(list_kind, int(row_id))
-            elif kind == "pk":
-                answer = self._apply_pick(int(rest))
-            else:
-                answer = "OK"
-        except Exception:
-            log.exception("Lỗi khi xử lý nút %s", data)
-            answer = "Có lỗi, xem log của bot."
-        await event.answer(answer[:190])
-        if remove_buttons:
-            try:
-                msg = await event.get_message()
-                await msg.edit(f"{msg.text}\n\n<i>→ {escape(answer)}</i>", parse_mode="html", buttons=None)
-            except Exception:
-                log.debug("Không sửa được tin chứa nút", exc_info=True)
+    async def _on_proposal(self, rest: str):
+        pid, yn = rest.split(":")
+        return await self.feedback.on_proposal(int(pid), yn == "y"), True
+
+    async def _on_notification(self, rest: str):
+        row_id, verdict = rest.split(":")
+        return await self.feedback.on_notification(int(row_id), verdict), True
+
+    async def _on_remove_rule(self, rest: str):
+        list_kind, row_id = rest.split(":")
+        return await self.feedback.on_remove_rule(list_kind, int(row_id)), True
+
+    async def _on_pick(self, rest: str):
+        return self._apply_pick(int(rest)), True
 
     # ---------- /vip /keyword /ignore ----------
     async def cmd_list(self, kind: str, args: list[str]) -> None:
@@ -285,6 +246,3 @@ class Commands:
             f"Bỏ qua: {len(self.store.list_items('ignore'))} · Bài học: {len(self.lessons.list())}\n"
             f"Chu kỳ tóm tắt: {get_interval(self.store, self.cfg)} phút · "
             f"Giờ nghỉ: {f'{sched.label()} ({sched.mode})' if sched else 'chưa đặt'}")
-
-    async def cmd_help(self, _args) -> None:
-        await self.send(HELP)

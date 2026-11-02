@@ -4,11 +4,12 @@ import logging
 
 from telethon import events, utils
 
-from .digest import Send, get_schedule
+from .digest import get_schedule
 from .formatting import important_message
-from .models import Incoming
-from .rules import match_rules
-from .storage import Storage
+from ...control.bot import Send
+from ...core.models import Incoming
+from ...core.rules import match_rules
+from ...core.storage import Storage
 
 log = logging.getLogger(__name__)
 

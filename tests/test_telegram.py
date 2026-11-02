@@ -5,17 +5,17 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from mybot.ai import DigestItem, DigestResult, LessonProposal
-from mybot.config import AIConfig, Config
-from mybot.digest import Digester, chunk_by_size
-from mybot.feedback import Feedback
-from mybot.formatting import pack
-from mybot.lessons import Lessons
-from mybot.listener import message_link
-from mybot.models import Incoming
-from mybot.rules import find_keyword, match_rules
-from mybot.schedule import RestSchedule, parse_hhmm
-from mybot.storage import Storage
+from mybot.core.ai import DigestItem, DigestResult, LessonProposal
+from mybot.core.config import AIConfig, Config
+from mybot.sources.telegram.digest import Digester, chunk_by_size
+from mybot.sources.telegram.feedback import Feedback
+from mybot.sources.telegram.formatting import pack
+from mybot.core.lessons import Lessons
+from mybot.sources.telegram.listener import message_link
+from mybot.core.models import Incoming
+from mybot.core.rules import find_keyword, match_rules
+from mybot.core.schedule import RestSchedule, parse_hhmm
+from mybot.core.storage import Storage
 
 TZ = ZoneInfo("Asia/Ho_Chi_Minh")
 

@@ -27,6 +27,10 @@ default_keywords:
   - thanh toán
   - chuyển khoản
 
+mail:
+  # Tên hiển thị ở mục "Người gửi" khi gửi email
+  from_name: Ngọc Nhất
+
 ai:
   model: claude-haiku-5-5
   effort: low

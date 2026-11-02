@@ -3,7 +3,7 @@ import logging
 import sys
 
 from . import app
-from .config import load_config
+from .core.config import load_config
 
 
 def main() -> None:

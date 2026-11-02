@@ -5,14 +5,13 @@ from datetime import datetime
 
 from telethon import TelegramClient
 
-from .ai import AI
-from .commands import Commands
-from .config import Config
-from .digest import Digester
-from .feedback import Feedback
-from .lessons import Lessons
-from .listener import Listener
-from .storage import Storage
+from .control.bot import Controller
+from .core.config import Config
+from .core.lessons import Lessons
+from .core.storage import Storage
+from .skills import mail
+from .sources import telegram
+from .sources.telegram.digest import Digester
 
 log = logging.getLogger(__name__)
 
@@ -52,15 +51,14 @@ async def run(cfg: Config) -> None:
     bot_me = await bot.get_me()
     log.info("Tài khoản: %s (%s) · Bot: @%s", me.first_name, me.id, bot_me.username)
 
-    ai = AI(cfg.ai, store)
-    commands = Commands(cfg, bot, user, me.id, store, lessons, feedback=None)
-    feedback = Feedback(cfg, store, ai, lessons, commands.send)
-    commands.feedback = feedback
-    digester = Digester(cfg, store, ai, lessons, commands.send)
-    Listener(user, store, commands.send, cfg.timezone, skip_ids={bot_me.id}).register()
-    commands.register()
+    controller = Controller(bot, me.id)
+    digester = telegram.setup(cfg, controller, user, store, lessons, skip_ids={bot_me.id})
+    composer = mail.setup(cfg, controller)
+    controller.register()
 
-    await commands.send(f"✅ Bot đã chạy, đang theo dõi tài khoản <b>{me.first_name}</b>. Gõ /help để xem lệnh.")
+    parts = ["theo dõi Telegram"] + (["soạn email"] if composer else [])
+    await controller.send(f"✅ Bot đã chạy ({', '.join(parts)}) cho tài khoản <b>{me.first_name}</b>. "
+                          "Gõ /help để xem lệnh.")
     await asyncio.gather(
         user.run_until_disconnected(),
         bot.run_until_disconnected(),

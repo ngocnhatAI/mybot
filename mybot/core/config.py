@@ -6,8 +6,19 @@ from zoneinfo import ZoneInfo
 import yaml
 from dotenv import load_dotenv
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = Path(os.environ.get("MYBOT_DATA_DIR", ROOT / "data"))
+
+
+@dataclass
+class MailConfig:
+    address: str = ""
+    app_password: str = ""
+    from_name: str = ""
+
+    @property
+    def enabled(self) -> bool:
+        return bool(self.address and self.app_password)
 
 
 @dataclass
@@ -31,6 +42,7 @@ class Config:
     about_me: str = ""
     default_keywords: list[str] = field(default_factory=list)
     ai: AIConfig = field(default_factory=AIConfig)
+    mail: MailConfig = field(default_factory=MailConfig)
 
     @property
     def data_dir(self) -> Path:
@@ -39,6 +51,10 @@ class Config:
     @property
     def lessons_path(self) -> Path:
         return DATA_DIR / "lessons.md"
+
+    @property
+    def templates_dir(self) -> Path:
+        return DATA_DIR / "templates"
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -62,4 +78,10 @@ def load_config(path: Path | None = None) -> Config:
         about_me=(raw.get("about_me") or "").strip(),
         default_keywords=[str(k) for k in raw.get("default_keywords") or []],
         ai=AIConfig(**(raw.get("ai") or {})),
+        mail=MailConfig(
+            address=os.environ.get("GMAIL_ADDRESS", "").strip(),
+            # Google hiển thị App Password có dấu cách ("abcd efgh ..."), bỏ đi cho chắc
+            app_password=os.environ.get("GMAIL_APP_PASSWORD", "").replace(" ", ""),
+            from_name=str((raw.get("mail") or {}).get("from_name") or ""),
+        ),
     )

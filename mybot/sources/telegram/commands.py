@@ -7,7 +7,7 @@ from html import escape
 
 from telethon import utils
 
-from .digest import MAX_INTERVAL, MIN_INTERVAL, get_interval, get_schedule
+from .digest import MAX_INTERVAL, MIN_INTERVAL, digest_off, get_interval, get_schedule
 from .feedback import Feedback
 from ...control.bot import Controller
 from ...core.config import Config
@@ -25,7 +25,7 @@ HELP = """<b>Theo dõi Telegram</b>
   Tin có từ khóa được báo ngay.
 /ignore list | add &lt;tên nhóm/người&gt; | remove &lt;số hoặc tên&gt;
   Bỏ qua hẳn chat: không đọc, không tóm tắt, không gửi AI.
-/interval  — xem chu kỳ tóm tắt · /interval 30  — tóm tắt 30 phút một lần
+/interval  — xem chu kỳ · /interval 30  — tóm tắt 30 phút một lần · /interval off  — tắt tóm tắt
 /schedule  — xem giờ nghỉ
 /schedule 17:30 08:00 notify|hold  — đặt giờ nghỉ hằng ngày
   notify: tin quan trọng vẫn báo ngay · hold: giữ tới cuối giờ nghỉ
@@ -56,8 +56,6 @@ class TelegramCommands:
         c.add_command(["/status"], self.cmd_status)
         c.add_callback("di", self._on_digest_item)
         c.add_callback("lp", self._on_proposal)
-        c.add_callback("nf", self._on_notification)
-        c.add_callback("rm", self._on_remove_rule)
         c.add_callback("pk", self._on_pick)
         c.add_help(HELP)
 
@@ -70,14 +68,6 @@ class TelegramCommands:
     async def _on_proposal(self, rest: str):
         pid, action = rest.split(":")
         return await self.feedback.on_proposal(int(pid), action), True
-
-    async def _on_notification(self, rest: str):
-        row_id, verdict = rest.split(":")
-        return await self.feedback.on_notification(int(row_id), verdict), True
-
-    async def _on_remove_rule(self, rest: str):
-        list_kind, row_id = rest.split(":")
-        return await self.feedback.on_remove_rule(list_kind, int(row_id)), True
 
     async def _on_pick(self, rest: str):
         return self._apply_pick(int(rest)), True
@@ -173,14 +163,32 @@ class TelegramCommands:
     # ---------- /interval ----------
     async def cmd_interval(self, args: list[str]) -> None:
         current = get_interval(self.store, self.cfg)
+        off = digest_off(self.store)
         if not args:
-            await self.send(f"Đang tóm tắt <b>{current} phút</b> một lần. Đổi bằng: /interval 30")
+            if off:
+                await self.send("Tóm tắt đang tắt. Bật lại bằng: /interval 15")
+            else:
+                await self.send(f"Đang tóm tắt <b>{current} phút</b> một lần. Đổi bằng: /interval 30 · "
+                                "Tắt: /interval off")
             return
         value = args[0].strip().lower().removesuffix("p").removesuffix("m")
+        if value == "off":
+            self.store.set_setting("digest_off", True)
+            pending = self.store.messages_by_status("pending")
+            self.store.set_status([m["id"] for m in pending], "skipped")
+            await self.send("Đã tắt tóm tắt. Chỉ còn báo ngay (VIP, nhắc tên, từ khóa).")
+            return
         if not value.isdigit() or not MIN_INTERVAL <= int(value) <= MAX_INTERVAL:
-            await self.send(f"Chu kỳ phải là số phút từ {MIN_INTERVAL} đến {MAX_INTERVAL}. Ví dụ: /interval 60")
+            await self.send(f"Chu kỳ phải là số phút từ {MIN_INTERVAL} đến {MAX_INTERVAL}, hoặc off. "
+                            "Ví dụ: /interval 60")
             return
         self.store.set_setting("batch_minutes", int(value))
+        if off:
+            # tin trong lúc tắt đã bỏ qua; đếm chu kỳ mới từ bây giờ
+            self.store.set_setting("digest_off", False)
+            self.store.set_setting("last_batch_at", datetime.now(self.cfg.timezone).isoformat())
+            await self.send(f"Đã bật lại: tóm tắt <b>{int(value)} phút</b> một lần, tính từ bây giờ.")
+            return
         await self.send(f"Đã đổi: tóm tắt <b>{int(value)} phút</b> một lần (trước đây {current} phút).")
 
     # ---------- /schedule ----------
@@ -250,5 +258,5 @@ class TelegramCommands:
             f"AI tháng này: {calls_m} lần · ~{cost(in_m, out_m):.2f} USD\n"
             f"VIP: {len(self.store.list_items('vip'))} · Từ khóa: {len(self.store.list_items('keyword'))} · "
             f"Bỏ qua: {len(self.store.list_items('ignore'))} · Bài học: {len(self.lessons.list())}\n"
-            f"Chu kỳ tóm tắt: {get_interval(self.store, self.cfg)} phút · "
+            f"Tóm tắt: {'tắt' if digest_off(self.store) else f'{get_interval(self.store, self.cfg)} phút'} · "
             f"Giờ nghỉ: {f'{sched.label()} ({sched.mode})' if sched else 'chưa đặt'}")

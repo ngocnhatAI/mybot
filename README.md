@@ -5,8 +5,8 @@ Hai phần: **theo dõi Telegram** và **soạn email theo template** (xem mục
 Phần theo dõi Telegram đọc tin nhắn trên tài khoản của bạn:
 
 - **Báo ngay** tin quan trọng theo luật: **tin nhắn riêng** từ người **VIP**, bạn **bị nhắc tên hoặc được trả lời**, tin có **từ khóa**.
-  (Người VIP nhắn trong nhóm thì không báo ngay.)
-- Mọi tin khác được gom lại, **15 phút một lần** (đổi bằng `/interval`) gửi Claude Haiku 5.5 tóm tắt theo đầu mục. Mỗi đầu mục có nhãn ⭐ quan trọng / ▫️ không quan trọng và nút Đúng / Sai nhãn.
+  (Người VIP nhắn trong nhóm thì không báo ngay.) Tin báo ngay chỉ gồm một dòng gọn: `Tên · (nhóm) · giờ · nội dung`, không nút.
+- Mọi tin khác được gom lại, **15 phút một lần** (đổi bằng `/interval`, tắt hẳn bằng `/interval off`) gửi Claude Haiku 5.5 tóm tắt theo đầu mục. Mỗi đầu mục có nhãn ⭐ quan trọng / ▫️ không quan trọng và nút Đúng / Sai nhãn.
 - Bấm Sai nhãn → bot **đề xuất một bài học** với 3 nút **Đồng ý** · **Góp ý** · **Bỏ qua**.
   *Góp ý*: bạn gõ ý của mình (hoặc tự viết lại bài học), AI viết lại rồi hỏi lại; góp ý bao nhiêu lần cũng được.
   Chỉ khi bấm **Đồng ý** bài học mới được ghi. Bài học là ghi chú cho AI (`data/lessons.md`) hoặc thêm từ khóa/VIP.
@@ -79,7 +79,7 @@ docker compose down
 | `/vip list` · `/vip add <tên, @username hoặc id>` · `/vip remove <số>` | Tin nhắn riêng từ người VIP → báo ngay (chỉ thêm được người, không thêm nhóm) |
 | `/keyword list` · `/keyword add <từ>` · `/keyword remove <số>` (viết tắt `/kw`) | Tin có từ khóa → báo ngay |
 | `/ignore list` · `/ignore add <tên chat>` · `/ignore remove <số>` | Bỏ qua hẳn chat: không đọc, không tóm tắt, không gửi AI |
-| `/interval` · `/interval 30` | Xem / đổi chu kỳ tóm tắt (5–720 phút, mặc định 15) |
+| `/interval` · `/interval 30` · `/interval off` | Xem / đổi chu kỳ tóm tắt (5–720 phút, mặc định 15). `off`: tắt hẳn, tin không quan trọng không bao giờ được tóm tắt; bật lại bằng `/interval 15` thì chỉ tóm tắt tin từ lúc bật |
 | `/schedule` · `/schedule 17:30 08:00 hold` · `/schedule off` | Giờ nghỉ hằng ngày. `notify`: tin quan trọng vẫn báo ngay; `hold`: giữ tới cuối giờ nghỉ |
 | `/lessons` · `/lessons remove <số>` | Xem / xóa bài học |
 | `/status` | Số tin hôm nay, chi phí AI ước tính |

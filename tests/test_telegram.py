@@ -9,7 +9,8 @@ from mybot.core.ai import DigestItem, DigestResult, LessonProposal
 from mybot.core.config import AIConfig, Config
 from mybot.sources.telegram.digest import Digester, chunk_by_size
 from mybot.sources.telegram.feedback import Feedback
-from mybot.sources.telegram.formatting import pack
+from mybot.sources.telegram.commands import TelegramCommands
+from mybot.sources.telegram.formatting import important_message, pack
 from mybot.core.lessons import Lessons
 from mybot.sources.telegram.listener import message_link
 from mybot.core.models import Incoming
@@ -159,6 +160,37 @@ def test_interval_setting_overrides_config(tmp_path):
     assert sent == []
     asyncio.run(dg.tick(t0 + timedelta(minutes=30)))
     assert len(sent) == 1
+
+
+def test_interval_off_never_summarizes_but_still_delivers_held(tmp_path):
+    ai = FakeAI()
+    cfg, store, lessons, sent, send, dg = setup(tmp_path, ai)
+    controller = type("C", (), {"send": staticmethod(send)})()
+    cmds = TelegramCommands(cfg, controller, None, store, lessons, None)
+    store.add_message(msg(text="cũ"), "pending")
+
+    asyncio.run(cmds.cmd_interval(["off"]))
+    assert store.messages_by_status("pending") == []
+    store.add_message(msg(text="gấp"), "held", match_rules(msg(text="gấp"), {}, ["gấp"]))
+    sent.clear()
+    asyncio.run(dg.tick(datetime(2026, 11, 2, 9, 0, tzinfo=TZ)))
+    asyncio.run(dg.tick(datetime(2026, 11, 2, 12, 0, tzinfo=TZ)))
+    assert ai.calls == 0 and len(sent) == 1 and "giờ nghỉ" in sent[0][0]
+
+    asyncio.run(cmds.cmd_interval(["15"]))
+    assert "Đã bật lại" in sent[-1][0]
+    assert store.get_setting("digest_off") is False
+
+
+def test_important_message_is_one_plain_line(tmp_path):
+    store = Storage(tmp_path / "db.sqlite")
+    private = store.get_message(store.add_message(
+        msg(chat_kind="private", chat_title="Nguyễn Phúc Thắng", sender_name="Nguyễn Phúc Thắng",
+            text="chắc là thuyết minh hay gì đấy", date=datetime(2026, 11, 2, 10, 4, tzinfo=timezone.utc)),
+        "notified"))
+    assert important_message(private, TZ) == "Nguyễn Phúc Thắng · 17:04 · chắc là thuyết minh hay gì đấy"
+    group = store.get_message(store.add_message(msg(text="<gấp>"), "notified"))
+    assert important_message(group, TZ) == "An · Nhóm Sales · 16:00 · &lt;gấp&gt;"
 
 
 def test_rest_window_holds_then_summarizes_at_end(tmp_path):

@@ -30,6 +30,11 @@ def get_interval(store: Storage, cfg: Config) -> int:
     return int(store.get_setting("batch_minutes") or cfg.batch_minutes)
 
 
+def digest_off(store: Storage) -> bool:
+    """True khi đã /interval off: tin không quan trọng không bao giờ được tóm tắt."""
+    return bool(store.get_setting("digest_off"))
+
+
 def chunk_by_size(rows: list[sqlite3.Row], lines: list[str], max_chars: int) -> list[list[int]]:
     """Chia tin thành nhiều lần gọi AI, giữ các tin cùng chat ở cạnh nhau."""
     order = sorted(range(len(rows)), key=lambda i: (rows[i]["chat_id"], rows[i]["id"]))
@@ -69,6 +74,11 @@ class Digester:
         sched = get_schedule(self.store)
         if sched and sched.is_resting(now):
             return
+        if digest_off(self.store):
+            held = self.store.messages_by_status("held")
+            if held:
+                await self._send_held(held)
+            return
 
         last_iso = self.store.get_setting("last_batch_at")
         last = datetime.fromisoformat(last_iso) if last_iso else None
@@ -96,7 +106,7 @@ class Digester:
 
     async def _send_held(self, held: list[sqlite3.Row]) -> None:
         tz = self.cfg.timezone
-        header = f"⭐ <b>Tin quan trọng trong giờ nghỉ ({len(held)})</b>"
+        header = f"<b>Tin quan trọng trong giờ nghỉ ({len(held)})</b>"
         for text in fmt.pack([fmt.held_block(m, tz) for m in held], header):
             await self.send(text, None)
         self.store.set_status([m["id"] for m in held], "notified")

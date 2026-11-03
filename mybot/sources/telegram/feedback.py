@@ -131,33 +131,6 @@ class Feedback:
         await self._store_and_show(item, corrected, proposal, candidates)
         return True
 
-    # ---------- nút trên thông báo báo ngay ----------
-    async def on_notification(self, row_id: int, verdict: str) -> str:
-        m = self.store.get_message(row_id)
-        if not m:
-            return "Tin này đã hết hạn."
-        if verdict == "ok":
-            return "Đã ghi nhận"
-        if m["rule_kind"] == "keyword":
-            await self.send(f"Tin này được báo vì có từ khóa <b>{escape(m['rule_value'])}</b>. Bỏ từ khóa này?",
-                            [[("Bỏ từ khóa", f"rm:keyword:{row_id}"), ("Giữ nguyên", "noop")]])
-        elif m["rule_kind"] == "vip":
-            name = self.store.list_map("vip").get(m["rule_value"], m["rule_value"])
-            await self.send(f"Tin này được báo vì <b>{escape(name)}</b> là VIP. Bỏ khỏi danh sách VIP?",
-                            [[("Bỏ VIP", f"rm:vip:{row_id}"), ("Giữ nguyên", "noop")]])
-        else:
-            return "Tin nhắc tên hoặc trả lời bạn luôn được báo ngay."
-        return "Đã ghi nhận"
-
-    async def on_remove_rule(self, kind: str, row_id: int) -> str:
-        m = self.store.get_message(row_id)
-        if not m or m["rule_kind"] != kind:
-            return "Không tìm thấy luật tương ứng."
-        key = m["rule_value"].casefold() if kind == "keyword" else m["rule_value"]
-        if self.store.list_remove(kind, key):
-            return "Đã bỏ."
-        return "Luật này đã được bỏ trước đó."
-
 
 def _sender_lines(candidates: dict[str, str]) -> list[str]:
     return [f"{k}: {v}" for k, v in candidates.items()]

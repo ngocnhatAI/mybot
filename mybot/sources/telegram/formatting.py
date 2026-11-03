@@ -12,13 +12,6 @@ def local_time(iso: str, tz: ZoneInfo, fmt: str = "%H:%M") -> str:
     return datetime.fromisoformat(iso).astimezone(tz).strftime(fmt)
 
 
-def where(m: sqlite3.Row) -> str:
-    if m["chat_kind"] == "private":
-        return f"👤 {escape(m['sender_name'])}"
-    icon = "📢" if m["chat_kind"] == "channel" else "👥"
-    return f"{icon} {escape(m['chat_title'])} · {escape(m['sender_name'])}"
-
-
 def link_html(url: str | None, text: str = "Mở tin") -> str:
     return f' · <a href="{escape(url, quote=True)}">{text}</a>' if url else ""
 
@@ -28,17 +21,21 @@ def clip(text: str, n: int) -> str:
     return text if len(text) <= n else text[:n] + "…"
 
 
+def _plain_line(m: sqlite3.Row, time_text: str, max_chars: int) -> str:
+    """Tên · (nhóm) · giờ · tin — không icon, không nút."""
+    parts = [m["sender_name"]]
+    if m["chat_kind"] != "private" and m["chat_title"] != m["sender_name"]:
+        parts.append(m["chat_title"])
+    parts += [time_text, clip(m["text"], max_chars)]
+    return escape(" · ".join(parts))
+
+
 def important_message(m: sqlite3.Row, tz: ZoneInfo) -> str:
-    return (f"⭐ <b>Tin quan trọng</b> — {where(m)}\n"
-            f"<i>{escape(m['rule_reason'] or '')}</i> · {local_time(m['date'], tz)}"
-            f"{link_html(m['link'])}\n\n"
-            f"{escape(clip(m['text'], 1500))}")
+    return _plain_line(m, local_time(m["date"], tz), 1500)
 
 
 def held_block(m: sqlite3.Row, tz: ZoneInfo) -> str:
-    return (f"• {local_time(m['date'], tz, '%d/%m %H:%M')} {where(m)} — "
-            f"<i>{escape(m['rule_reason'] or '')}</i>{link_html(m['link'])}\n"
-            f"  {escape(clip(m['text'], 400))}")
+    return _plain_line(m, local_time(m["date"], tz, "%d/%m %H:%M"), 400)
 
 
 def digest_item(number: int, title: str, summary: str, important: bool, reason: str,

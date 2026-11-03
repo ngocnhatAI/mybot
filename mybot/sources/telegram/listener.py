@@ -4,7 +4,7 @@ import logging
 
 from telethon import events, utils
 
-from .digest import get_schedule
+from .digest import digest_off, get_schedule
 from .formatting import important_message
 from ...control.bot import Send
 from ...core.models import Incoming
@@ -92,7 +92,7 @@ class Listener:
         keywords = [label for _, label in self.store.list_items("keyword")]
         hit = match_rules(msg, self.store.list_map("vip"), keywords)
         if not hit:
-            self.store.add_message(msg, "pending")
+            self.store.add_message(msg, "skipped" if digest_off(self.store) else "pending")
             return
 
         sched = get_schedule(self.store)
@@ -101,6 +101,4 @@ class Listener:
             return
 
         row_id = self.store.add_message(msg, "notified", hit)
-        row = self.store.get_message(row_id)
-        await self.send(important_message(row, self.tz),
-                        [[("Đúng", f"nf:{row_id}:ok"), ("Không quan trọng", f"nf:{row_id}:bad")]])
+        await self.send(important_message(self.store.get_message(row_id), self.tz))

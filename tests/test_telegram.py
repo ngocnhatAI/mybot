@@ -66,8 +66,8 @@ def test_schedule_overnight():
     assert s.is_resting(datetime(2026, 11, 3, 7, 59, tzinfo=TZ))
     assert not s.is_resting(datetime(2026, 11, 3, 8, 0, tzinfo=TZ))
     assert not s.is_resting(datetime(2026, 11, 3, 12, 0, tzinfo=TZ))
-    _, end = s.last_end(datetime(2026, 11, 3, 8, 1, tzinfo=TZ))
-    assert end == datetime(2026, 11, 3, 8, 0, tzinfo=TZ)
+    # lịch cũ còn lưu chế độ notify/hold vẫn đọc được
+    assert RestSchedule.from_dict({"start": "17:30", "end": "08:00", "mode": "hold"}).label() == "17:30 → 08:00"
 
 
 def test_schedule_same_day_and_parse():
@@ -162,7 +162,7 @@ def test_interval_setting_overrides_config(tmp_path):
     assert len(sent) == 1
 
 
-def test_interval_off_never_summarizes_but_still_delivers_held(tmp_path):
+def test_interval_off_never_summarizes(tmp_path):
     ai = FakeAI()
     cfg, store, lessons, sent, send, dg = setup(tmp_path, ai)
     controller = type("C", (), {"send": staticmethod(send)})()
@@ -171,11 +171,10 @@ def test_interval_off_never_summarizes_but_still_delivers_held(tmp_path):
 
     asyncio.run(cmds.cmd_interval(["off"]))
     assert store.messages_by_status("pending") == []
-    store.add_message(msg(text="gấp"), "held", match_rules(msg(text="gấp"), {}, ["gấp"]))
     sent.clear()
     asyncio.run(dg.tick(datetime(2026, 11, 2, 9, 0, tzinfo=TZ)))
     asyncio.run(dg.tick(datetime(2026, 11, 2, 12, 0, tzinfo=TZ)))
-    assert ai.calls == 0 and len(sent) == 1 and "giờ nghỉ" in sent[0][0]
+    assert ai.calls == 0 and sent == []
 
     asyncio.run(cmds.cmd_interval(["15"]))
     assert "Đã bật lại" in sent[-1][0]
@@ -193,22 +192,21 @@ def test_important_message_is_one_plain_line(tmp_path):
     assert important_message(group, TZ) == "An · Nhóm Sales · 16:00 · &lt;gấp&gt;"
 
 
-def test_rest_window_holds_then_summarizes_at_end(tmp_path):
+def test_rest_window_is_silent_and_sends_nothing_after(tmp_path):
     ai = FakeAI()
     cfg, store, lessons, sent, send, dg = setup(tmp_path, ai)
-    store.set_setting("schedule", RestSchedule(time(17, 30), time(8, 0), "hold").to_dict())
+    store.set_setting("schedule", RestSchedule(time(17, 30), time(8, 0)).to_dict())
     store.set_setting("last_batch_at", datetime(2026, 11, 2, 17, 20, tzinfo=TZ).isoformat())
-    store.add_message(msg(text="việc thường"), "pending")
-    store.add_message(msg(text="gấp"), "held", match_rules(msg(text="gấp"), {}, ["gấp"]))
+    store.add_message(msg(text="trước giờ nghỉ"), "pending")
 
-    asyncio.run(dg.tick(datetime(2026, 11, 2, 23, 0, tzinfo=TZ)))
-    asyncio.run(dg.tick(datetime(2026, 11, 3, 7, 59, tzinfo=TZ)))
-    assert sent == [] and ai.calls == 0
+    # vào giờ nghỉ: gửi nốt phần tin trước giờ nghỉ một lần
+    asyncio.run(dg.tick(datetime(2026, 11, 2, 17, 31, tzinfo=TZ)))
+    assert len(sent) == 1 and "17:20–17:31" in sent[0][0]
 
-    asyncio.run(dg.tick(datetime(2026, 11, 3, 8, 1, tzinfo=TZ)))
-    assert "Tin quan trọng trong giờ nghỉ" in sent[0][0]
-    assert "Tóm tắt giờ nghỉ 17:30 → 08:00" in sent[1][0]
-    assert store.messages_by_status("held") == []
+    # trong giờ nghỉ và sau giờ nghỉ: không có gì để gửi
+    for t in (datetime(2026, 11, 2, 23, 0, tzinfo=TZ), datetime(2026, 11, 3, 8, 1, tzinfo=TZ)):
+        asyncio.run(dg.tick(t))
+    assert len(sent) == 1 and ai.calls == 1
 
 
 def test_ai_failure_falls_back_to_raw_grouping(tmp_path):

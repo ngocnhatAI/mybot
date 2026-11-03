@@ -89,15 +89,15 @@ class Listener:
             link=message_link(kind, event.chat_id, chat_username, event.id),
         )
 
+        sched = get_schedule(self.store)
+        if sched and sched.is_resting(event.date.astimezone(self.tz)):
+            self.store.add_message(msg, "skipped")  # giờ nghỉ: không báo, không tóm tắt, không gửi bù
+            return
+
         keywords = [label for _, label in self.store.list_items("keyword")]
         hit = match_rules(msg, self.store.list_map("vip"), keywords)
         if not hit:
             self.store.add_message(msg, "skipped" if digest_off(self.store) else "pending")
-            return
-
-        sched = get_schedule(self.store)
-        if sched and sched.mode == "hold" and sched.is_resting(event.date.astimezone(self.tz)):
-            self.store.add_message(msg, "held", hit)
             return
 
         row_id = self.store.add_message(msg, "notified", hit)

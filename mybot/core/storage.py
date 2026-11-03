@@ -13,7 +13,7 @@ CREATE TABLE IF NOT EXISTS messages (
     chat_id INTEGER, chat_title TEXT, chat_kind TEXT, chat_username TEXT,
     msg_id INTEGER, sender_id INTEGER, sender_name TEXT, sender_username TEXT,
     text TEXT, date TEXT, link TEXT,
-    -- pending: chờ tóm tắt | notified: đã báo ngay | held: quan trọng nhưng giữ trong giờ nghỉ
+    -- pending: chờ tóm tắt | notified: đã báo ngay | skipped: bỏ qua (giờ nghỉ, /interval off)
     -- summarized: đã nằm trong bản tóm tắt
     status TEXT,
     rule_kind TEXT, rule_value TEXT, rule_reason TEXT
@@ -136,7 +136,7 @@ class Storage:
 
     def purge_older_than(self, days: int) -> None:
         cutoff = (utcnow() - timedelta(days=days)).isoformat()
-        self.db.execute("DELETE FROM messages WHERE date<? AND status!='pending' AND status!='held'",
+        self.db.execute("DELETE FROM messages WHERE date<? AND status!='pending'",
                         (cutoff,))
         self.db.execute("DELETE FROM digest_items WHERE created_at<?", (cutoff,))
         self.db.execute("DELETE FROM proposals WHERE created_at<?", (cutoff,))

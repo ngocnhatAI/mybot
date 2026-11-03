@@ -13,7 +13,7 @@ from ...control.bot import Controller
 from ...core.config import Config
 from ...core.lessons import Lessons
 from ...core.rules import normalize
-from ...core.schedule import MODES, RestSchedule, parse_hhmm
+from ...core.schedule import RestSchedule, parse_hhmm
 from ...core.storage import Storage
 
 log = logging.getLogger(__name__)
@@ -27,9 +27,9 @@ HELP = """<b>Theo dõi Telegram</b>
   Bỏ qua hẳn chat: không đọc, không tóm tắt, không gửi AI.
 /interval  — xem chu kỳ · /interval 30  — tóm tắt 30 phút một lần · /interval off  — tắt tóm tắt
 /schedule  — xem giờ nghỉ
-/schedule 17:30 08:00 notify|hold  — đặt giờ nghỉ hằng ngày
-  notify: tin quan trọng vẫn báo ngay · hold: giữ tới cuối giờ nghỉ
-/schedule off  — tắt giờ nghỉ
+/schedule 17:30 08:00  — đặt giờ nghỉ hằng ngày
+  Trong giờ nghỉ bot im lặng hẳn: không báo, không tóm tắt, không gửi bù
+/schedule off  — tắt giờ nghỉ (chạy bình thường cả ngày)
 /lessons  — xem bài học · /lessons remove &lt;số&gt;
 /status  — tình trạng bot và chi phí AI"""
 
@@ -196,30 +196,27 @@ class TelegramCommands:
         sched = get_schedule(self.store)
         if not args:
             if not sched:
-                await self.send("Chưa đặt giờ nghỉ. Ví dụ: /schedule 17:30 08:00 hold")
+                await self.send("Chưa đặt giờ nghỉ. Ví dụ: /schedule 17:30 08:00")
             else:
-                await self.send(f"Giờ nghỉ hằng ngày: <b>{sched.label()}</b>, chế độ <b>{sched.mode}</b>.")
+                await self.send(f"Giờ nghỉ hằng ngày: <b>{sched.label()}</b>. Tắt: /schedule off")
             return
         if args[0].lower() == "off":
             self.store.set_setting("schedule", None)
-            await self.send("Đã tắt giờ nghỉ.")
+            await self.send("Đã tắt giờ nghỉ. Bot chạy bình thường cả ngày.")
             return
         tokens = " ".join(args).split()
         try:
             start, end = parse_hhmm(tokens[0]), parse_hhmm(tokens[1])
         except (ValueError, IndexError):
-            await self.send("Sai cú pháp. Ví dụ: /schedule 17:30 08:00 hold")
+            await self.send("Sai cú pháp. Ví dụ: /schedule 17:30 08:00")
             return
-        mode = tokens[2].lower() if len(tokens) > 2 else (sched.mode if sched else "notify")
-        if mode not in MODES or start == end:
-            await self.send("Chế độ phải là notify hoặc hold, và giờ bắt đầu khác giờ kết thúc.")
+        if start == end:
+            await self.send("Giờ bắt đầu phải khác giờ kết thúc.")
             return
-        new = RestSchedule(start, end, mode)
+        new = RestSchedule(start, end)
         self.store.set_setting("schedule", new.to_dict())
-        explain = ("tin quan trọng vẫn báo ngay" if mode == "notify"
-                   else "tin quan trọng được giữ tới cuối giờ nghỉ")
-        await self.send(f"Đã đặt giờ nghỉ <b>{new.label()}</b> hằng ngày; {explain}. "
-                        "Cuối giờ nghỉ bot gửi một bản tóm tắt toàn bộ.")
+        await self.send(f"Đã đặt giờ nghỉ <b>{new.label()}</b> hằng ngày. Trong giờ nghỉ bot bỏ qua hẳn "
+                        "mọi tin: không báo, không tóm tắt, không gửi bù.")
 
     # ---------- /lessons ----------
     async def cmd_lessons(self, args: list[str]) -> None:
@@ -253,10 +250,10 @@ class TelegramCommands:
         await self.send(
             f"<b>Tình trạng</b> ({state})\n"
             f"Hôm nay: {sum(counts.values())} tin · báo ngay {counts.get('notified', 0)} · "
-            f"chờ tóm tắt {counts.get('pending', 0)} · giữ trong giờ nghỉ {counts.get('held', 0)}\n"
+            f"chờ tóm tắt {counts.get('pending', 0)} · bỏ qua {counts.get('skipped', 0)}\n"
             f"AI hôm nay: {calls_d} lần · ~{cost(in_d, out_d):.3f} USD\n"
             f"AI tháng này: {calls_m} lần · ~{cost(in_m, out_m):.2f} USD\n"
             f"VIP: {len(self.store.list_items('vip'))} · Từ khóa: {len(self.store.list_items('keyword'))} · "
             f"Bỏ qua: {len(self.store.list_items('ignore'))} · Bài học: {len(self.lessons.list())}\n"
             f"Tóm tắt: {'tắt' if digest_off(self.store) else f'{get_interval(self.store, self.cfg)} phút'} · "
-            f"Giờ nghỉ: {f'{sched.label()} ({sched.mode})' if sched else 'chưa đặt'}")
+            f"Giờ nghỉ: {sched.label() if sched else 'chưa đặt'}")

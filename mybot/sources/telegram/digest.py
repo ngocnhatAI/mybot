@@ -1,4 +1,4 @@
-"""Tổng hợp tin không quan trọng theo chu kỳ, và tóm tắt cuối giờ nghỉ."""
+"""Tổng hợp tin không quan trọng theo chu kỳ."""
 
 import logging
 import sqlite3
@@ -71,45 +71,25 @@ class Digester:
 
     async def tick(self, now: datetime) -> None:
         """Gọi mỗi phút. Tự quyết định đã đến lúc tóm tắt chưa."""
-        sched = get_schedule(self.store)
-        if sched and sched.is_resting(now):
-            return
         if digest_off(self.store):
-            held = self.store.messages_by_status("held")
-            if held:
-                await self._send_held(held)
             return
-
         last_iso = self.store.get_setting("last_batch_at")
         last = datetime.fromisoformat(last_iso) if last_iso else None
-        rest_window = sched.last_end(now) if sched else None
-        after_rest = bool(rest_window and last and last < rest_window[1])
+        sched = get_schedule(self.store)
+        resting = bool(sched and sched.is_resting(now))
         interval = timedelta(minutes=get_interval(self.store, self.cfg))
-        due = last is None or after_rest or now - last >= interval
+        # vừa vào giờ nghỉ: gửi nốt phần tin trước giờ nghỉ, sau đó im lặng tới hết giờ nghỉ
+        due = last is None or now - last >= interval or (resting and bool(self.store.messages_by_status("pending")))
         if not due:
             return
 
         self.store.set_setting("last_batch_at", now.isoformat())
-        if after_rest:
-            title = f"🌙 <b>Tóm tắt giờ nghỉ {sched.label()}</b>"
-        else:
-            title = f"🗂 <b>Tóm tắt {(last or now):%H:%M}–{now:%H:%M}</b>"
-        await self.run(title)
+        await self.run(f"🗂 <b>Tóm tắt {(last or now):%H:%M}–{now:%H:%M}</b>")
 
     async def run(self, title: str) -> None:
-        held = self.store.messages_by_status("held")
         pending = self.store.messages_by_status("pending")
-        if held:
-            await self._send_held(held)
         if pending:
             await self._send_digest(pending, title)
-
-    async def _send_held(self, held: list[sqlite3.Row]) -> None:
-        tz = self.cfg.timezone
-        header = f"<b>Tin quan trọng trong giờ nghỉ ({len(held)})</b>"
-        for text in fmt.pack([fmt.held_block(m, tz) for m in held], header):
-            await self.send(text, None)
-        self.store.set_status([m["id"] for m in held], "notified")
 
     async def _send_digest(self, rows: list[sqlite3.Row], title: str) -> None:
         tz = self.cfg.timezone

@@ -7,7 +7,7 @@ from telethon import TelegramClient
 from .control.bot import Controller
 from .core.config import Config
 from .core.storage import Storage
-from .skills import clear, mail, screen
+from .skills import mail, screen
 from .sources import telegram
 
 log = logging.getLogger(__name__)
@@ -51,12 +51,11 @@ async def run(cfg: Config) -> None:
     telegram.setup(cfg, controller, user, store, skip_ids={bot_me.id})
     composer = mail.setup(cfg, controller)
     screen.setup(controller)
-    clear.setup(controller, user, bot_me.id)
     controller.register()
     await controller.publish_menu()
     controller.set_quick_keyboard([
         [("VIP", "/vip"), ("Keyword", "/keyword"), ("Schedule", "/schedule")],
-        [("Mail", "/mail"), ("Screen", "/screen"), ("Clear", "/clear"), ("Help", "/help")],
+        [("Mail", "/mail"), ("Screen", "/screen"), ("Help", "/help")],
     ])
 
     parts = ["theo dõi Telegram"] + (["soạn email"] if composer else [])

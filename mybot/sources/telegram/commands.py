@@ -9,7 +9,7 @@ from telethon import utils
 
 from .digest import MAX_INTERVAL, MIN_INTERVAL, digest_off, get_interval, get_schedule
 from .feedback import Feedback
-from ...control.bot import Controller
+from ...control.bot import Controller, Option
 from ...core.config import Config
 from ...core.lessons import Lessons
 from ...core.rules import normalize
@@ -33,6 +33,11 @@ HELP = """<b>Theo dõi Telegram</b>
 /lessons  — xem bài học · /lessons remove &lt;số&gt;
 /status  — tình trạng bot và chi phí AI"""
 
+def list_options(add_prompt: str) -> list[Option]:
+    return [Option("List", "list"), Option("Add", "add", ask=add_prompt),
+            Option("Remove", "remove", ask="Nhập số thứ tự hoặc tên cần xóa:", before="list")]
+
+
 LIST_NAMES = {"vip": "VIP", "keyword": "Từ khóa", "ignore": "Chat bỏ qua"}
 
 
@@ -47,13 +52,20 @@ class TelegramCommands:
 
     def register(self) -> None:
         c = self.controller
-        c.add_command(["/vip"], lambda a: self.cmd_list("vip", a))
-        c.add_command(["/keyword", "/kw"], lambda a: self.cmd_list("keyword", a))
-        c.add_command(["/ignore"], lambda a: self.cmd_list("ignore", a))
-        c.add_command(["/interval"], self.cmd_interval)
-        c.add_command(["/schedule"], self.cmd_schedule)
-        c.add_command(["/lessons"], self.cmd_lessons)
-        c.add_command(["/status"], self.cmd_status)
+        c.add_command(["/vip"], lambda a: self.cmd_list("vip", a), menu="Danh sách VIP",
+                      options=list_options("Nhập tên, @username hoặc id người cần thêm:"))
+        c.add_command(["/keyword", "/kw"], lambda a: self.cmd_list("keyword", a), menu="Từ khóa báo ngay",
+                      options=list_options("Nhập từ khóa cần thêm:"))
+        c.add_command(["/ignore"], lambda a: self.cmd_list("ignore", a), menu="Chat bỏ qua",
+                      options=list_options("Nhập tên nhóm hoặc người cần bỏ qua:"))
+        c.add_command(["/interval"], self.cmd_interval, menu="Chu kỳ tóm tắt", options=[
+            Option("Status"), Option("Set", ask="Nhập số phút, ví dụ 30:"), Option("Off", "off")])
+        c.add_command(["/schedule"], self.cmd_schedule, menu="Giờ nghỉ", options=[
+            Option("Status"), Option("Set", ask="Nhập giờ bắt đầu và kết thúc, ví dụ 17:30 08:00:"),
+            Option("Off", "off")])
+        c.add_command(["/lessons"], self.cmd_lessons, menu="Bài học của AI", options=[
+            Option("List"), Option("Remove", "remove", ask="Nhập số thứ tự bài học cần xóa:", before="")])
+        c.add_command(["/status"], self.cmd_status, menu="Tình trạng bot và chi phí AI")
         c.add_callback("di", self._on_digest_item)
         c.add_callback("lp", self._on_proposal)
         c.add_callback("pk", self._on_pick)

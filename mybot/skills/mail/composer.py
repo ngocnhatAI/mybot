@@ -66,8 +66,8 @@ class MailComposer:
         self._listing: list[str] = []
 
     def register(self, controller) -> None:
-        controller.add_command(["/mail"], self.cmd_mail)
-        controller.add_command(["/cancel"], self.cmd_cancel)
+        controller.add_command(["/mail"], self.cmd_mail, menu="Soạn email")
+        controller.add_command(["/cancel"], self.cmd_cancel, menu="Hủy email đang soạn")
         controller.add_callback("ml", self.on_button)
         controller.add_text_handler(self.on_text)
         controller.add_help(HELP)

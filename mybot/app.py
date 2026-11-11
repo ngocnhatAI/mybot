@@ -9,7 +9,7 @@ from .control.bot import Controller
 from .core.config import Config
 from .core.lessons import Lessons
 from .core.storage import Storage
-from .skills import mail
+from .skills import mail, screen
 from .sources import telegram
 from .sources.telegram.digest import Digester
 
@@ -54,7 +54,9 @@ async def run(cfg: Config) -> None:
     controller = Controller(bot, me.id)
     digester = telegram.setup(cfg, controller, user, store, lessons, skip_ids={bot_me.id})
     composer = mail.setup(cfg, controller)
+    screen.setup(controller)
     controller.register()
+    await controller.publish_menu()
 
     parts = ["theo dõi Telegram"] + (["soạn email"] if composer else [])
     await controller.send(f"Bot đã chạy ({', '.join(parts)}) cho tài khoản <b>{me.first_name}</b>. "

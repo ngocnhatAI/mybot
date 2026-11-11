@@ -12,6 +12,8 @@ Phần theo dõi Telegram đọc tin nhắn trên tài khoản của bạn:
   Chỉ khi bấm **Đồng ý** bài học mới được ghi. Bài học là ghi chú cho AI (`data/lessons.md`) hoặc thêm từ khóa/VIP.
 - **Giờ nghỉ** hằng ngày (`/schedule`): bot im lặng hẳn, mọi tin trong giờ nghỉ bị bỏ qua (không báo ngay, không tóm tắt, không gửi bù).
 
+Gõ lệnh không kèm gì (ví dụ `/vip`, `/schedule`, `/screen`) để hiện nút chọn: nút như *Add* sẽ hỏi bạn gõ tiếp. Vẫn gõ thẳng được, ví dụ `/vip add An`. Các lệnh có trong nút **Menu** của bot.
+
 Mẹo: tắt tiếng (mute) mọi chat trong Telegram, chỉ để thông báo của bot này.
 
 ---
@@ -83,7 +85,20 @@ docker compose down
 | `/schedule` · `/schedule 17:30 08:00` · `/schedule off` | Giờ nghỉ hằng ngày: bot bỏ qua hẳn mọi tin (không báo ngay, không tóm tắt, hết giờ nghỉ cũng không gửi bù). `off`: không có giờ nghỉ, chạy bình thường cả ngày |
 | `/lessons` · `/lessons remove <số>` | Xem / xóa bài học |
 | `/status` | Số tin hôm nay, chi phí AI ước tính |
+| `/screen status` · `/screen on` · `/screen off` | Màn hình máy Windows chạy bot (xem mục *Bật/tắt màn hình Windows*) |
 | `/help` | Danh sách lệnh |
+
+Gõ lệnh không kèm gì thì bot hiện nút chọn:
+
+| Lệnh | Nút |
+|---|---|
+| `/vip`, `/keyword`, `/ignore` | List · Add · Remove |
+| `/interval`, `/schedule` | Status · Set · Off |
+| `/lessons` | List · Remove |
+| `/screen` | Status · On · Off |
+
+Nút Add / Set / Remove hỏi bạn gõ tiếp (Remove in danh sách trước để biết số thứ tự). Đang được hỏi mà gõ lệnh khác thì bỏ câu hỏi.
+Các lệnh cũng nằm trong nút **Menu** của bot trên Telegram (bot tự cập nhật mỗi lần khởi động).
 
 `/vip add` và `/ignore add` tìm theo tên trong danh sách chat của bạn; nếu nhiều kết quả, bot hiện nút để chọn.
 
@@ -180,3 +195,46 @@ pip install -r requirements.txt pytest
 ```bash
 python -m pytest tests
 ```
+
+
+---
+
+## Bật/tắt màn hình Windows (`/screen`)
+
+Bot chạy trong Docker nên không tự điều khiển được màn hình. Cần chạy thêm một script nhỏ trên Windows
+(`host/screen_agent.py`, chỉ dùng thư viện chuẩn của Python, không cần cài gì):
+
+1. Trong `.env` đặt `SCREEN_TOKEN=` một chuỗi bí mật bất kỳ (>= 16 ký tự), rồi build lại bot
+   (nếu `docker compose up -d --build` báo lỗi `--allow=fs.read=Dockerfile`, dùng
+   `docker build -t mybot-bot .` rồi `docker compose up -d --no-build`).
+2. Cho script tự chạy mỗi khi đăng nhập Windows (chạy một lần trong PowerShell, tại thư mục dự án):
+   ```powershell
+   $py = (Get-Command python).Source -replace 'python\.exe$','pythonw.exe'
+   $action = New-ScheduledTaskAction -Execute $py -Argument "`"$PWD\host\screen_agent.py`"" -WorkingDirectory $PWD
+   $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
+   $settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -StartWhenAvailable
+   Register-ScheduledTask -TaskName 'mybot-screen-agent' -Action $action -Trigger $trigger -Settings $settings -Force
+   Start-ScheduledTask -TaskName 'mybot-screen-agent'
+   ```
+   Sửa script xong thì dừng tiến trình `pythonw` đang chạy nó rồi `Start-ScheduledTask -TaskName 'mybot-screen-agent'`.
+3. Nhắn bot `/screen` để thấy nút Status · On · Off.
+
+| Lệnh | Tác dụng |
+|---|---|
+| `/screen status` | Màn hình đang bật / tắt, có đang khóa chuột và bàn phím không |
+| `/screen off` | Tắt màn hình **và khóa chuột, bàn phím** |
+| `/screen on` | Mở khóa và bật màn hình |
+
+Khi khóa: mọi phím, di chuyển, click, cuộn chuột đều bị chặn. Windows vẫn đánh thức màn hình khi có người
+chạm chuột/phím (không chặn được), nhưng script tắt lại ngay, nên chỉ thấy chớp sáng. Mở khóa:
+
+- **Ctrl+Shift+N** tại máy (vừa mở khóa vừa bật màn hình), hoặc `/screen on` từ Telegram.
+- Ctrl+Alt+Del luôn dùng được (Windows không cho chặn); đăng xuất / khởi động lại thì script dừng, hết khóa.
+
+Lưu ý:
+- "Bật" hoạt động bằng cách giả lập chuột nhúc nhích và phím Shift. Nếu Windows đang ở màn hình khóa
+  (lock screen), màn hình sáng lên nhưng vẫn phải đăng nhập.
+- Script chạy quyền thường: nếu lúc khóa đang chọn một cửa sổ chạy quyền admin (ví dụ Task Manager),
+  phím có thể vẫn lọt vào cửa sổ đó.
+- Script chỉ nghe ở `127.0.0.1:8765` và chỉ nhận yêu cầu kèm đúng token. Tắt máy thì `/screen` báo
+  "không kết nối được" cho tới khi bạn đăng nhập lại.

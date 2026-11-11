@@ -91,7 +91,7 @@ Gõ lệnh không kèm gì thì bot hiện nút chọn:
 
 Nút Add / Set / Remove hỏi bạn gõ tiếp (Remove in danh sách trước để biết số thứ tự). Đang được hỏi mà gõ lệnh khác thì bỏ câu hỏi.
 Các lệnh cũng nằm trong nút **Menu** của bot trên Telegram (bot tự cập nhật mỗi lần khởi động),
-và trên bàn phím nút nhanh dưới ô nhập: VIP · Keyword · Schedule / Mail · Screen · UltraView · Help
+và trên bàn phím nút nhanh dưới ô nhập: Help · VIP · Screen · Mail / Keyword · Schedule · UltraView
 (hiện sau tin "Bot đã chạy" hoặc khi gõ /help; bấm nút giống như gõ lệnh).
 
 `/vip add` tìm theo tên trong danh sách chat của bạn; nếu nhiều kết quả, bot hiện nút để chọn.

@@ -55,8 +55,8 @@ async def run(cfg: Config) -> None:
     controller.register()
     await controller.publish_menu()
     controller.set_quick_keyboard([
-        [("VIP", "/vip"), ("Keyword", "/keyword"), ("Schedule", "/schedule")],
-        [("Mail", "/mail"), ("Screen", "/screen"), ("UltraView", "/ultraview"), ("Help", "/help")],
+        [("Help", "/help"), ("VIP", "/vip"), ("Screen", "/screen"), ("Mail", "/mail")],
+        [("Keyword", "/keyword"), ("Schedule", "/schedule"), ("UltraView", "/ultraview")],
     ])
 
     parts = ["theo dõi Telegram"] + (["soạn email"] if composer else [])

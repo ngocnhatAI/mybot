@@ -78,6 +78,7 @@ docker compose down
 | `/keyword list` · `/keyword add <từ khóa>` · `/keyword remove <số thứ tự hoặc từ khóa>` (viết tắt `/kw`) | Tin có từ khóa → báo ngay |
 | `/schedule` · `/schedule 17:30 08:00` · `/schedule off` | Giờ nghỉ hằng ngày: bot bỏ qua hẳn mọi tin (hết giờ nghỉ cũng không gửi bù). `off`: không có giờ nghỉ |
 | `/screen status` · `/screen on` · `/screen off` | Màn hình máy Windows chạy bot (xem mục *Bật/tắt màn hình Windows*) |
+| `/ultraview` (`/uv`) | Mở UltraViewer nếu chưa chạy, gửi ID và mật khẩu |
 | `/help` | Danh sách lệnh |
 
 Gõ lệnh không kèm gì thì bot hiện nút chọn:
@@ -90,7 +91,7 @@ Gõ lệnh không kèm gì thì bot hiện nút chọn:
 
 Nút Add / Set / Remove hỏi bạn gõ tiếp (Remove in danh sách trước để biết số thứ tự). Đang được hỏi mà gõ lệnh khác thì bỏ câu hỏi.
 Các lệnh cũng nằm trong nút **Menu** của bot trên Telegram (bot tự cập nhật mỗi lần khởi động),
-và trên bàn phím nút nhanh dưới ô nhập: VIP · Keyword · Schedule / Mail · Screen · Help
+và trên bàn phím nút nhanh dưới ô nhập: VIP · Keyword · Schedule / Mail · Screen · UltraView · Help
 (hiện sau tin "Bot đã chạy" hoặc khi gõ /help; bấm nút giống như gõ lệnh).
 
 `/vip add` tìm theo tên trong danh sách chat của bạn; nếu nhiều kết quả, bot hiện nút để chọn.
@@ -227,3 +228,13 @@ Lưu ý:
   phím có thể vẫn lọt vào cửa sổ đó.
 - Script chỉ nghe ở `127.0.0.1:8765` và chỉ nhận yêu cầu kèm đúng token. Tắt máy thì `/screen` báo
   "không kết nối được" cho tới khi bạn đăng nhập lại.
+
+## UltraViewer (`/ultraview`, viết tắt `/uv`)
+
+Dùng chung script `host/screen_agent.py` và `SCREEN_TOKEN` với `/screen`. Bot mở UltraViewer nếu chưa chạy,
+chờ tới khi có ID (tối đa khoảng 45 giây), rồi gửi **ID** và **mật khẩu** (bấm vào để sao chép).
+ID và mật khẩu được đọc thẳng từ cửa sổ UltraViewer, kể cả khi đang thu nhỏ xuống khay hệ thống.
+UltraViewer cài ở chỗ khác `C:\Program Files (x86)\UltraViewer` thì đặt `ULTRAVIEWER_EXE=` (đường dẫn tới
+`UltraViewer_Desktop.exe`) trong `.env` rồi khởi động lại script.
+
+Mật khẩu UltraViewer cho phép điều khiển máy từ xa: tin nhắn chứa nó nằm trong chat với bot, nên giữ kín tài khoản Telegram.

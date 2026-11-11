@@ -9,6 +9,7 @@ host.docker.internal vào đây); đặt SCREEN_BIND=0.0.0.0 nếu cần.
 
 import ctypes
 import hmac
+import json
 import os
 import sys
 import threading
@@ -225,6 +226,80 @@ def _watch_display_state() -> None:
 ACTIONS = {"off": screen_off, "on": screen_on}
 
 
+# ---------- UltraViewer ----------
+# ID và mật khẩu đọc thẳng từ cửa sổ UltraViewer: 2 ô chỉ-đọc ở cột trái (ID ở trên, mật khẩu ở dưới).
+# Đọc được cả khi cửa sổ đang thu nhỏ xuống khay hệ thống.
+ULTRAVIEWER_EXE = os.environ.get("ULTRAVIEWER_EXE", r"C:\Program Files (x86)\UltraViewer\UltraViewer_Desktop.exe")
+WM_GETTEXT, WM_GETTEXTLENGTH, ES_READONLY = 0x000D, 0x000E, 0x0800
+_ENUMPROC = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+
+def _win_text(h) -> str:
+    user32 = ctypes.windll.user32
+    user32.SendMessageTimeoutW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+                                           wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_size_t)]
+    n = ctypes.c_size_t()
+    if not user32.SendMessageTimeoutW(h, WM_GETTEXTLENGTH, 0, 0, SMTO_ABORTIFHUNG, 1000, ctypes.byref(n)):
+        return ""
+    buf = ctypes.create_unicode_buffer(n.value + 1)
+    user32.SendMessageTimeoutW(h, WM_GETTEXT, n.value + 1, ctypes.cast(buf, ctypes.c_void_p).value,
+                               SMTO_ABORTIFHUNG, 1000, ctypes.byref(n))
+    return buf.value
+
+
+def _win_class(h) -> str:
+    buf = ctypes.create_unicode_buffer(256)
+    ctypes.windll.user32.GetClassNameW(h, buf, 256)
+    return buf.value
+
+
+def _children(h) -> list:
+    out = []
+    ctypes.windll.user32.EnumChildWindows(h, _ENUMPROC(lambda c, _: out.append(c) or True), 0)
+    return out
+
+
+def ultraviewer_credentials() -> tuple[str, str] | None:
+    """(ID, mật khẩu) đang hiện trên UltraViewer, hoặc None nếu chưa chạy / chưa có ID."""
+    user32 = ctypes.windll.user32
+    user32.GetWindowLongW.restype = ctypes.c_long
+    forms = []
+    user32.EnumWindows(_ENUMPROC(lambda h, _: forms.append(h) or True), 0)
+    for form in forms:
+        if _win_class(form) != "ThunderRT6FormDC" or not _win_text(form).startswith("UltraViewer "):
+            continue
+        boxes = []
+        for c in _children(form):
+            if "EDIT" in _win_class(c).upper() and user32.GetWindowLongW(c, -16) & ES_READONLY:
+                text = _win_text(c).strip()
+                if text:
+                    r = wintypes.RECT()
+                    user32.GetWindowRect(c, ctypes.byref(r))
+                    boxes.append((r.top, r.left, text))
+        boxes.sort()
+        if len(boxes) >= 2 and boxes[0][2].replace(" ", "").isdigit():
+            return boxes[0][2], boxes[1][2]
+    return None
+
+
+def ultraviewer_start_and_read(timeout: float = 45) -> dict:
+    """Chưa chạy thì mở UltraViewer, rồi chờ tới khi có ID (cần kết nối máy chủ UltraViewer)."""
+    creds = ultraviewer_credentials()
+    started = False
+    if creds is None:
+        if not os.path.exists(ULTRAVIEWER_EXE):
+            return {"error": f"không thấy {ULTRAVIEWER_EXE}"}
+        os.startfile(ULTRAVIEWER_EXE)  # nếu đã chạy mà chưa có ID, UltraViewer chỉ hiện lại cửa sổ
+        started = True
+        deadline = time.time() + timeout
+        while creds is None and time.time() < deadline:
+            time.sleep(1)
+            creds = ultraviewer_credentials()
+    if creds is None:
+        return {"error": "UltraViewer chưa hiện ID (có thể chưa kết nối được máy chủ)", "started": started}
+    return {"id": creds[0], "password": creds[1], "started": started}
+
+
 def load_env() -> None:
     env = Path(__file__).resolve().parents[1] / ".env"
     if not env.exists():
@@ -245,7 +320,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:
         if not self._authorized():
             return self._reply(401, "unauthorized")
-        if self.path.strip("/") != "screen/status":
+        path = self.path.strip("/")
+        if path == "ultraviewer":
+            return self._reply(200, json.dumps(ultraviewer_start_and_read(), ensure_ascii=False))
+        if path != "screen/status":
             return self._reply(404, "unknown action")
         self._reply(200, f"{display_state} locked" if input_lock.locked else display_state)
 

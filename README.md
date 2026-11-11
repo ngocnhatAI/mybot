@@ -78,6 +78,7 @@ docker compose down
 | `/keyword list` · `/keyword add <từ khóa>` · `/keyword remove <số thứ tự hoặc từ khóa>` (viết tắt `/kw`) | Tin có từ khóa → báo ngay |
 | `/schedule` · `/schedule 17:30 08:00` · `/schedule off` | Giờ nghỉ hằng ngày: bot bỏ qua hẳn mọi tin (hết giờ nghỉ cũng không gửi bù). `off`: không có giờ nghỉ |
 | `/screen status` · `/screen on` · `/screen off` | Màn hình máy Windows chạy bot (xem mục *Bật/tắt màn hình Windows*) |
+| `/clear` | Xóa toàn bộ lịch sử chat với bot, cả hai phía (bot hỏi xác nhận trước; `/clear confirm` xóa ngay) |
 | `/help` | Danh sách lệnh |
 
 Gõ lệnh không kèm gì thì bot hiện nút chọn:
@@ -87,10 +88,11 @@ Gõ lệnh không kèm gì thì bot hiện nút chọn:
 | `/vip`, `/keyword` | List · Add · Remove |
 | `/schedule` | Status · Set · Off |
 | `/screen` | Status · On · Off |
+| `/clear` | Clear all · Cancel |
 
 Nút Add / Set / Remove hỏi bạn gõ tiếp (Remove in danh sách trước để biết số thứ tự). Đang được hỏi mà gõ lệnh khác thì bỏ câu hỏi.
 Các lệnh cũng nằm trong nút **Menu** của bot trên Telegram (bot tự cập nhật mỗi lần khởi động),
-và trên bàn phím nút nhanh dưới ô nhập: VIP · Keyword · Schedule / Mail · Screen · Help
+và trên bàn phím nút nhanh dưới ô nhập: VIP · Keyword · Schedule / Mail · Screen · Clear · Help
 (hiện sau tin "Bot đã chạy" hoặc khi gõ /help; bấm nút giống như gõ lệnh).
 
 `/vip add` tìm theo tên trong danh sách chat của bạn; nếu nhiều kết quả, bot hiện nút để chọn.

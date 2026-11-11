@@ -74,8 +74,8 @@ docker compose down
 
 | Lệnh | Tác dụng |
 |---|---|
-| `/vip list` · `/vip add <tên, @username hoặc id>` · `/vip remove <số>` | Tin nhắn riêng từ người VIP → báo ngay (chỉ thêm được người, không thêm nhóm) |
-| `/keyword list` · `/keyword add <từ>` · `/keyword remove <số>` (viết tắt `/kw`) | Tin có từ khóa → báo ngay |
+| `/vip list` · `/vip add <tên người, @username hoặc id>` · `/vip remove <số thứ tự hoặc tên>` | Tin nhắn riêng từ người VIP → báo ngay (chỉ thêm được người, không thêm nhóm) |
+| `/keyword list` · `/keyword add <từ khóa>` · `/keyword remove <số thứ tự hoặc từ khóa>` (viết tắt `/kw`) | Tin có từ khóa → báo ngay |
 | `/schedule` · `/schedule 17:30 08:00` · `/schedule off` | Giờ nghỉ hằng ngày: bot bỏ qua hẳn mọi tin (hết giờ nghỉ cũng không gửi bù). `off`: không có giờ nghỉ |
 | `/screen status` · `/screen on` · `/screen off` | Màn hình máy Windows chạy bot (xem mục *Bật/tắt màn hình Windows*) |
 | `/help` | Danh sách lệnh |

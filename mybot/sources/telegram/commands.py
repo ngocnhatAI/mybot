@@ -16,15 +16,18 @@ log = logging.getLogger(__name__)
 
 HELP = """<b>Theo dõi Telegram</b>
 /vip — người VIP
+   Thêm: tên người, @username hoặc id (chỉ người, không thêm nhóm)
+   Xóa: số thứ tự trong danh sách hoặc tên
 /keyword — từ khóa (viết tắt /kw)
+   Thêm: từ khóa · Xóa: số thứ tự hoặc từ khóa
 /schedule — giờ nghỉ hằng ngày
 <i>Chỉ báo: tin riêng từ VIP, tin có từ khóa, tin nhắc tên hoặc trả lời bạn. Còn lại bỏ qua.</i>
-Gõ nhanh: /vip add An · /kw remove 2 · /schedule 17:30 08:00"""
+Gõ nhanh: /vip add An · /vip remove 2 · /kw add gấp · /schedule 17:30 08:00"""
 
 
-def list_options(add_prompt: str) -> list[Option]:
+def list_options(add_prompt: str, remove_prompt: str) -> list[Option]:
     return [Option("List", "list"), Option("Add", "add", ask=add_prompt),
-            Option("Remove", "remove", ask="Nhập số thứ tự hoặc tên cần xóa:", before="list")]
+            Option("Remove", "remove", ask=remove_prompt, before="list")]
 
 
 LIST_NAMES = {"vip": "VIP", "keyword": "Từ khóa"}
@@ -40,9 +43,10 @@ class TelegramCommands:
     def register(self) -> None:
         c = self.controller
         c.add_command(["/vip"], lambda a: self.cmd_list("vip", a), menu="Danh sách VIP",
-                      options=list_options("Nhập tên, @username hoặc id người cần thêm:"))
+                      options=list_options("Nhập tên người, @username hoặc id cần thêm (không thêm nhóm):",
+                                           "Nhập số thứ tự hoặc tên người cần xóa:"))
         c.add_command(["/keyword", "/kw"], lambda a: self.cmd_list("keyword", a), menu="Từ khóa báo ngay",
-                      options=list_options("Nhập từ khóa cần thêm:"))
+                      options=list_options("Nhập từ khóa cần thêm:", "Nhập số thứ tự hoặc từ khóa cần xóa:"))
         c.add_command(["/schedule"], self.cmd_schedule, menu="Giờ nghỉ", options=[
             Option("Status"), Option("Set", ask="Nhập giờ bắt đầu và kết thúc, ví dụ 17:30 08:00:"),
             Option("Off", "off")])

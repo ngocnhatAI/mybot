@@ -53,10 +53,14 @@ async def run(cfg: Config) -> None:
     screen.setup(controller)
     controller.register()
     await controller.publish_menu()
+    controller.set_quick_keyboard([
+        [("VIP", "/vip"), ("Keyword", "/keyword"), ("Schedule", "/schedule")],
+        [("Mail", "/mail"), ("Screen", "/screen"), ("Help", "/help")],
+    ])
 
     parts = ["theo dõi Telegram"] + (["soạn email"] if composer else [])
     await controller.send(f"Bot đã chạy ({', '.join(parts)}) cho tài khoản <b>{me.first_name}</b>. "
-                          "Gõ /help để xem lệnh.")
+                          "Gõ /help để xem lệnh.", keyboard=True)
     await asyncio.gather(
         user.run_until_disconnected(),
         bot.run_until_disconnected(),

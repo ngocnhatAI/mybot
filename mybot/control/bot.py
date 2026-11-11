@@ -46,6 +46,18 @@ class Controller:
         self._menu: list[tuple[str, str]] = []  # (lệnh không có "/", mô tả) hiện trong menu Telegram
         self._options: dict[str, tuple[str, str, list[Option]]] = {}  # lệnh → (tên chính, mô tả, các nút)
         self._pending: tuple[str, str] | None = None  # đang chờ bạn gõ: (lệnh, args đứng trước)
+        self._quick_rows: list[list[str]] = []  # nút bàn phím dưới ô nhập (reply keyboard)
+        self._quick: dict[str, str] = {}  # nhãn nút → lệnh
+
+    def set_quick_keyboard(self, rows: list[list[tuple[str, str]]]) -> None:
+        """Bàn phím nút luôn hiện dưới ô nhập. Bấm nút = gõ lệnh tương ứng.
+        Lệnh chưa được đăng ký (ví dụ /mail khi chưa cấu hình Gmail) thì không hiện nút."""
+        self._quick_rows, self._quick = [], {}
+        for row in rows:
+            kept = [(label, cmd) for label, cmd in row if cmd in self._commands]
+            if kept:
+                self._quick_rows.append([label for label, _ in kept])
+                self._quick.update(kept)
 
     # ---------- đăng ký ----------
     def add_command(self, names: list[str], handler: CommandHandler, menu: str = "",
@@ -85,8 +97,15 @@ class Controller:
             log.warning("Không cập nhật được menu lệnh của bot", exc_info=True)
 
     # ---------- gửi ----------
-    async def send(self, text: str, buttons: Buttons = None) -> None:
-        tg_buttons = [[Button.inline(lbl, data.encode()) for lbl, data in row] for row in buttons] if buttons else None
+    async def send(self, text: str, buttons: Buttons = None, keyboard: bool = False) -> None:
+        """keyboard=True: gửi kèm bàn phím nút nhanh (Telegram giữ nó cho tới khi được thay)."""
+        if buttons:
+            tg_buttons = [[Button.inline(lbl, data.encode()) for lbl, data in row] for row in buttons]
+        elif keyboard and self._quick_rows:
+            tg_buttons = [[Button.text(lbl, resize=True, persistent=True) for lbl in row]
+                          for row in self._quick_rows]
+        else:
+            tg_buttons = None
         try:
             await self.bot.send_message(self.owner_id, text, parse_mode="html", buttons=tg_buttons,
                                         link_preview=False)
@@ -99,6 +118,7 @@ class Controller:
         if event.sender_id != self.owner_id:
             return
         text = (event.raw_text or "").strip()
+        text = self._quick.get(text, text)  # bấm nút bàn phím nhanh = gõ lệnh
         try:
             if text.startswith("/"):
                 self._pending = None  # gõ lệnh khác = thôi không trả lời câu hỏi đang chờ
@@ -170,4 +190,4 @@ class Controller:
         return opt.label, False  # giữ nút để bấm tiếp
 
     async def _cmd_help(self, _args) -> None:
-        await self.send("Gõ lệnh không kèm gì để hiện nút chọn.\n\n" + "\n\n".join(self._help))
+        await self.send("Gõ lệnh không kèm gì để hiện nút chọn.\n\n" + "\n\n".join(self._help), keyboard=True)

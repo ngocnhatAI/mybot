@@ -96,3 +96,30 @@ def test_command_alone_shows_options_and_ask_flow():
     assert calls[-1] == ["add", "Chị Tư"]
     asyncio.run(c._on_message(Event(1, "linh tinh")))
     assert calls[-1] == ["add", "Chị Tư"]  # không còn chờ nên không chạy remove
+
+
+def test_quick_keyboard_buttons_act_as_commands():
+    class KbBot(FakeBot):
+        async def send_message(self, to, text, buttons=None, **kw):
+            self.sent.append((to, text, buttons))
+
+        def add_event_handler(self, *a):
+            pass
+
+    bot = KbBot()
+    c = Controller(bot, owner_id=1)
+    calls = []
+
+    async def vip(args):
+        calls.append(args)
+
+    c.add_command(["/vip"], vip)
+    c.register()
+    c.set_quick_keyboard([[("VIP", "/vip"), ("Mail", "/mail")], [("Help", "/help")]])
+    assert c._quick_rows == [["VIP"], ["Help"]]  # /mail chưa đăng ký: không có nút
+
+    asyncio.run(c._on_message(Event(1, "VIP")))
+    assert calls == [[]]
+    asyncio.run(c._on_message(Event(1, "Help")))
+    rows = bot.sent[-1][2]
+    assert [[b.button.text for b in row] for row in rows] == [["VIP"], ["Help"]]

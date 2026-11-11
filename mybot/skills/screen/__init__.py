@@ -11,10 +11,9 @@ from ...control.bot import Controller, Option
 log = logging.getLogger(__name__)
 
 HELP = """<b>Màn hình máy tính</b>
-/screen off  — tắt màn hình và khóa chuột, bàn phím
-/screen on  — mở khóa và bật màn hình
-/screen status  — xem màn hình đang bật hay tắt, có đang khóa không
-Ngồi tại máy: Ctrl+Shift+N để mở khóa."""
+/screen — xem, bật, tắt màn hình
+<i>Tắt là khóa luôn chuột và bàn phím. Mở tại máy: Ctrl+Shift+N</i>
+Gõ nhanh: /screen on · /screen off · /screen status"""
 
 DEFAULT_URL = "http://host.docker.internal:8765"
 

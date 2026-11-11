@@ -15,15 +15,11 @@ from ...core.storage import Storage
 log = logging.getLogger(__name__)
 
 HELP = """<b>Theo dõi Telegram</b>
-Chỉ báo tin khớp luật, mọi tin khác bị bỏ qua.
-/vip list | add &lt;tên, @username hoặc id&gt; | remove &lt;số hoặc tên&gt;
-  Tin nhắn riêng từ người VIP được báo ngay (tin trong nhóm thì không).
-/keyword list | add &lt;từ khóa&gt; | remove &lt;số hoặc từ&gt;  (viết tắt /kw)
-  Tin có từ khóa được báo ngay.
-Bạn bị nhắc tên hoặc được trả lời: luôn báo ngay.
-/schedule  — xem giờ nghỉ
-/schedule 17:30 08:00  — đặt giờ nghỉ hằng ngày (trong giờ nghỉ bot bỏ qua mọi tin, không gửi bù)
-/schedule off  — tắt giờ nghỉ"""
+/vip — người VIP
+/keyword — từ khóa (viết tắt /kw)
+/schedule — giờ nghỉ hằng ngày
+<i>Chỉ báo: tin riêng từ VIP, tin có từ khóa, tin nhắc tên hoặc trả lời bạn. Còn lại bỏ qua.</i>
+Gõ nhanh: /vip add An · /kw remove 2 · /schedule 17:30 08:00"""
 
 
 def list_options(add_prompt: str) -> list[Option]:

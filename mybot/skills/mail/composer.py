@@ -18,10 +18,10 @@ from ...core.config import MailConfig
 
 PREVIEW_BODY_LIMIT = 3000
 
-HELP = """<b>Soạn email</b>
-/mail  — chọn template rồi trả lời từng câu hỏi
-/cancel  — hủy email đang soạn
-Template là các file .md trong data/templates/."""
+HELP = """<b>Email</b>
+/mail — soạn email theo template
+/cancel — hủy email đang soạn
+<i>Template: các file .md trong data/templates/</i>"""
 
 RECIPIENT_FIELDS = (TO_FIELD, CC_FIELD)
 

@@ -170,5 +170,4 @@ class Controller:
         return opt.label, False  # giữ nút để bấm tiếp
 
     async def _cmd_help(self, _args) -> None:
-        await self.send("<b>Các lệnh</b>\nGõ lệnh không kèm gì (ví dụ /vip) để hiện nút chọn.\n\n"
-                        + "\n\n".join(self._help))
+        await self.send("Gõ lệnh không kèm gì để hiện nút chọn.\n\n" + "\n\n".join(self._help))

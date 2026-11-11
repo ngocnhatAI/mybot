@@ -1,20 +1,8 @@
 # Cấu hình chung của bot. Sửa xong thì khởi động lại bot: docker compose restart
-# Danh sách VIP, từ khóa, chat bỏ qua và giờ nghỉ được quản lý bằng lệnh trong bot,
+# Danh sách VIP, từ khóa và giờ nghỉ được quản lý bằng lệnh trong bot,
 # không nằm ở đây.
 
 timezone: Asia/Ho_Chi_Minh
-
-# Bao nhiêu phút tổng hợp tin không quan trọng một lần (mặc định).
-# Đổi bằng lệnh /interval trong bot thì giá trị đó được ưu tiên hơn dòng này.
-batch_minutes: 15
-
-# Giữ lịch sử tin nhắn bao nhiêu ngày
-retention_days: 30
-
-# Mô tả ngắn về bạn để AI hiểu điều gì quan trọng với bạn
-about_me: |
-  Tôi là chủ tài khoản Telegram này. Tin quan trọng là tin hỏi trực tiếp tôi, nhờ tôi
-  làm việc gì, cần tôi quyết định, liên quan tiền bạc, hợp đồng, deadline hoặc sự cố.
 
 # Từ khóa mặc định, chỉ nạp ở lần chạy đầu tiên. Sau đó dùng lệnh /keyword để sửa.
 default_keywords:
@@ -30,14 +18,3 @@ default_keywords:
 mail:
   # Tên hiển thị ở mục "Người gửi" khi gửi email
   from_name: Ngọc Nhất
-
-ai:
-  model: claude-haiku-5-5
-  effort: low
-  # Cắt bớt mỗi tin dài quá số ký tự này trước khi gửi AI
-  max_chars_per_message: 600
-  # Một lần gọi AI tối đa bao nhiêu ký tự tin nhắn; nhiều hơn thì chia thành nhiều lần
-  max_chars_per_request: 150000
-  # Giá (USD / 1 triệu token) để ước tính chi phí trong /status
-  price_input_per_mtok: 0.10
-  price_output_per_mtok: 0.50

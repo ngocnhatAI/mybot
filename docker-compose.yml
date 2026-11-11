@@ -4,7 +4,7 @@ services:
     restart: unless-stopped
     env_file: .env
     volumes:
-      # Phiên đăng nhập, cơ sở dữ liệu và lessons.md nằm ở đây, không mất khi khởi động lại
+      # Phiên đăng nhập, cơ sở dữ liệu (VIP, từ khóa, cài đặt) và template email nằm ở đây, không mất khi khởi động lại
       - ./data:/app/data
       # Sửa config.yaml rồi `docker compose restart` là có hiệu lực, không cần build lại
       - ./config.yaml:/app/config.yaml:ro

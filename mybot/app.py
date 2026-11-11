@@ -1,17 +1,14 @@
 import asyncio
 import getpass
 import logging
-from datetime import datetime
 
 from telethon import TelegramClient
 
 from .control.bot import Controller
 from .core.config import Config
-from .core.lessons import Lessons
 from .core.storage import Storage
 from .skills import mail, screen
 from .sources import telegram
-from .sources.telegram.digest import Digester
 
 log = logging.getLogger(__name__)
 
@@ -36,7 +33,6 @@ async def login(cfg: Config) -> None:
 async def run(cfg: Config) -> None:
     store = Storage(cfg.data_dir / "mybot.db")
     store.seed_keywords(cfg.default_keywords)
-    lessons = Lessons(cfg.lessons_path)
 
     user = user_client(cfg)
     await user.connect()
@@ -52,7 +48,7 @@ async def run(cfg: Config) -> None:
     log.info("Tài khoản: %s (%s) · Bot: @%s", me.first_name, me.id, bot_me.username)
 
     controller = Controller(bot, me.id)
-    digester = telegram.setup(cfg, controller, user, store, lessons, skip_ids={bot_me.id})
+    telegram.setup(cfg, controller, user, store, skip_ids={bot_me.id})
     composer = mail.setup(cfg, controller)
     screen.setup(controller)
     controller.register()
@@ -64,19 +60,5 @@ async def run(cfg: Config) -> None:
     await asyncio.gather(
         user.run_until_disconnected(),
         bot.run_until_disconnected(),
-        periodic(cfg, store, digester),
     )
 
-
-async def periodic(cfg: Config, store: Storage, digester: Digester) -> None:
-    last_purge = None
-    while True:
-        now = datetime.now(cfg.timezone)
-        try:
-            await digester.tick(now)
-            if last_purge != now.date():
-                store.purge_older_than(cfg.retention_days)
-                last_purge = now.date()
-        except Exception:
-            log.exception("Lỗi trong vòng tóm tắt định kỳ")
-        await asyncio.sleep(60)

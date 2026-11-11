@@ -6,11 +6,8 @@ Phần theo dõi Telegram đọc tin nhắn trên tài khoản của bạn:
 
 - **Báo ngay** tin quan trọng theo luật: **tin nhắn riêng** từ người **VIP**, bạn **bị nhắc tên hoặc được trả lời**, tin có **từ khóa**.
   (Người VIP nhắn trong nhóm thì không báo ngay.) Tin báo ngay chỉ gồm một dòng gọn: `Tên · (nhóm) · giờ · nội dung`, không nút.
-- Mọi tin khác được gom lại, **15 phút một lần** (đổi bằng `/interval`, tắt hẳn bằng `/interval off`) gửi Claude Haiku 5.5 tóm tắt theo đầu mục. Mỗi đầu mục có nhãn ⭐ quan trọng / ▫️ không quan trọng và nút Đúng / Sai nhãn.
-- Bấm Sai nhãn → bot **đề xuất một bài học** với 3 nút **Đồng ý** · **Góp ý** · **Bỏ qua**.
-  *Góp ý*: bạn gõ ý của mình (hoặc tự viết lại bài học), AI viết lại rồi hỏi lại; góp ý bao nhiêu lần cũng được.
-  Chỉ khi bấm **Đồng ý** bài học mới được ghi. Bài học là ghi chú cho AI (`data/lessons.md`) hoặc thêm từ khóa/VIP.
-- **Giờ nghỉ** hằng ngày (`/schedule`): bot im lặng hẳn, mọi tin trong giờ nghỉ bị bỏ qua (không báo ngay, không tóm tắt, không gửi bù).
+- **Mọi tin khác bị bỏ qua**: không báo, không lưu lại. Bot không dùng AI.
+- **Giờ nghỉ** hằng ngày (`/schedule`): bot im lặng hẳn, mọi tin trong giờ nghỉ bị bỏ qua (không báo ngay, không gửi bù).
 
 Gõ lệnh không kèm gì (ví dụ `/vip`, `/schedule`, `/screen`) để hiện nút chọn: nút như *Add* sẽ hỏi bạn gõ tiếp. Vẫn gõ thẳng được, ví dụ `/vip add An`. Các lệnh có trong nút **Menu** của bot.
 
@@ -20,13 +17,12 @@ Mẹo: tắt tiếng (mute) mọi chat trong Telegram, chỉ để thông báo c
 
 ## Cài đặt lần đầu (trên máy Windows có Docker Desktop)
 
-### 1. Chuẩn bị 4 giá trị bí mật
+### 1. Chuẩn bị 3 giá trị bí mật
 
 | Giá trị | Lấy ở đâu |
 |---|---|
 | `TG_API_ID`, `TG_API_HASH` | Đăng nhập https://my.telegram.org → **API development tools** → tạo app (tên gì cũng được) |
 | `TG_BOT_TOKEN` | Nhắn **@BotFather** trên Telegram → `/newbot` → đặt tên → nhận token |
-| `ANTHROPIC_API_KEY` | https://console.anthropic.com → **API Keys** → tạo key (cần nạp ít tiền) |
 
 Sao chép `.env.example` thành `.env` rồi điền các giá trị vào. **Không chia sẻ file `.env`**.
 
@@ -80,11 +76,7 @@ docker compose down
 |---|---|
 | `/vip list` · `/vip add <tên, @username hoặc id>` · `/vip remove <số>` | Tin nhắn riêng từ người VIP → báo ngay (chỉ thêm được người, không thêm nhóm) |
 | `/keyword list` · `/keyword add <từ>` · `/keyword remove <số>` (viết tắt `/kw`) | Tin có từ khóa → báo ngay |
-| `/ignore list` · `/ignore add <tên chat>` · `/ignore remove <số>` | Bỏ qua hẳn chat: không đọc, không tóm tắt, không gửi AI |
-| `/interval` · `/interval 30` · `/interval off` | Xem / đổi chu kỳ tóm tắt (5–720 phút, mặc định 15). `off`: tắt hẳn, tin không quan trọng không bao giờ được tóm tắt; bật lại bằng `/interval 15` thì chỉ tóm tắt tin từ lúc bật |
-| `/schedule` · `/schedule 17:30 08:00` · `/schedule off` | Giờ nghỉ hằng ngày: bot bỏ qua hẳn mọi tin (không báo ngay, không tóm tắt, hết giờ nghỉ cũng không gửi bù). `off`: không có giờ nghỉ, chạy bình thường cả ngày |
-| `/lessons` · `/lessons remove <số>` | Xem / xóa bài học |
-| `/status` | Số tin hôm nay, chi phí AI ước tính |
+| `/schedule` · `/schedule 17:30 08:00` · `/schedule off` | Giờ nghỉ hằng ngày: bot bỏ qua hẳn mọi tin (hết giờ nghỉ cũng không gửi bù). `off`: không có giờ nghỉ |
 | `/screen status` · `/screen on` · `/screen off` | Màn hình máy Windows chạy bot (xem mục *Bật/tắt màn hình Windows*) |
 | `/help` | Danh sách lệnh |
 
@@ -92,21 +84,15 @@ Gõ lệnh không kèm gì thì bot hiện nút chọn:
 
 | Lệnh | Nút |
 |---|---|
-| `/vip`, `/keyword`, `/ignore` | List · Add · Remove |
-| `/interval`, `/schedule` | Status · Set · Off |
-| `/lessons` | List · Remove |
+| `/vip`, `/keyword` | List · Add · Remove |
+| `/schedule` | Status · Set · Off |
 | `/screen` | Status · On · Off |
 
 Nút Add / Set / Remove hỏi bạn gõ tiếp (Remove in danh sách trước để biết số thứ tự). Đang được hỏi mà gõ lệnh khác thì bỏ câu hỏi.
 Các lệnh cũng nằm trong nút **Menu** của bot trên Telegram (bot tự cập nhật mỗi lần khởi động).
 
-`/vip add` và `/ignore add` tìm theo tên trong danh sách chat của bạn; nếu nhiều kết quả, bot hiện nút để chọn.
-
-## File bài học `data/lessons.md`
-
-Mỗi dòng bắt đầu bằng `- ` là một bài học AI dùng khi gán nhãn. Bạn mở file bằng Notepad để sửa/xóa
-trực tiếp; thay đổi có hiệu lực từ bản tóm tắt kế tiếp. Bài học dạng *thêm từ khóa / VIP* không nằm
-trong file này mà vào danh sách `/keyword`, `/vip`.
+`/vip add` tìm theo tên trong danh sách chat của bạn; nếu nhiều kết quả, bot hiện nút để chọn.
+Ngoài VIP và từ khóa, tin **nhắc tên bạn hoặc trả lời tin của bạn** luôn được báo ngay.
 
 ## Soạn email
 
@@ -158,17 +144,18 @@ Email **chỉ được gửi khi bạn bấm Gửi**.
 
 ## Cấu hình `config.yaml`
 
-Múi giờ, chu kỳ tóm tắt (mặc định 15 phút), số ngày giữ lịch sử, đoạn mô tả về bạn (`about_me`) để AI
-hiểu điều gì quan trọng, model AI, tên người gửi email (`mail.from_name`). Sửa xong chạy `docker compose restart`.
+Múi giờ, từ khóa mặc định (chỉ nạp lần chạy đầu), tên người gửi email (`mail.from_name`).
+Sửa xong chạy `docker compose restart`.
 
 ## Cấu trúc code
 
 ```
 mybot/
-├── core/              dùng chung: cấu hình, cơ sở dữ liệu, AI, luật lọc, giờ nghỉ, bài học
+├── core/              dùng chung: cấu hình, cơ sở dữ liệu (VIP, từ khóa, cài đặt), luật lọc, giờ nghỉ
 ├── control/           bot điều khiển: gửi tin, định tuyến lệnh / nút / tin nhắn chữ
-├── sources/telegram/  theo dõi và tóm tắt tin Telegram
-└── skills/mail/       soạn và gửi email theo template
+├── sources/telegram/  theo dõi tin Telegram, báo tin khớp luật
+├── skills/mail/       soạn và gửi email theo template
+└── skills/screen/     lệnh /screen (gọi host/screen_agent.py trên Windows)
 ```
 
 Thêm tính năng mới: tạo thư mục trong `skills/` (hoặc `sources/` nếu là nguồn tin), viết hàm
@@ -176,7 +163,7 @@ Thêm tính năng mới: tạo thư mục trong `skills/` (hoặc `sources/` n�
 
 ## Quyền riêng tư
 
-- Nội dung mọi chat không nằm trong `/ignore` được gửi lên Anthropic để tóm tắt.
+- Không gửi nội dung tin nhắn ra dịch vụ bên ngoài nào và không lưu tin nhắn: bot chỉ xét luật rồi báo hoặc bỏ qua.
 - Tin từ tài khoản hệ thống Telegram (mã đăng nhập) không bao giờ được đọc.
 - Bot chỉ trả lời đúng tài khoản Telegram đã đăng nhập.
 - Thư mục `data/` và file `.env` đã được loại khỏi git.

@@ -1,14 +1,14 @@
-"""Nghe tin nhắn đến trên tài khoản Telegram của bạn và phân loại."""
+"""Nghe tin nhắn đến trên tài khoản Telegram của bạn: tin khớp luật thì báo ngay, còn lại bỏ qua."""
 
 import logging
 
 from telethon import events, utils
 
-from .digest import digest_off, get_schedule
 from .formatting import important_message
 from ...control.bot import Send
 from ...core.models import Incoming
 from ...core.rules import match_rules
+from ...core.schedule import get_schedule
 from ...core.storage import Storage
 
 log = logging.getLogger(__name__)
@@ -61,44 +61,28 @@ class Listener:
     async def _handle(self, event) -> None:
         if event.out or event.chat_id in self.skip_ids or event.sender_id in self.skip_ids:
             return
-        if str(event.chat_id) in self.store.list_map("ignore"):
+        sched = get_schedule(self.store)
+        if sched and sched.is_resting(event.date.astimezone(self.tz)):
+            return  # giờ nghỉ: bỏ qua hẳn
+
+        kind = "private" if event.is_private else "group" if event.is_group else "channel"
+        text = event.raw_text or ""
+        if event.message.media:
+            text = f"{describe_media(event.message)} {text}".strip()
+        keywords = [label for _, label in self.store.list_items("keyword")]
+        # Xét luật trước khi hỏi Telegram tên chat/người gửi: tin không khớp thì bỏ qua luôn
+        probe = Incoming(chat_id=event.chat_id, chat_title="", chat_kind=kind, chat_username=None,
+                         msg_id=event.id, sender_id=event.sender_id, sender_name="", sender_username=None,
+                         text=text, mentioned=bool(event.message.mentioned), date=event.date)
+        if not match_rules(probe, self.store.list_map("vip"), keywords):
             return
 
         chat = await event.get_chat()
         sender = await event.get_sender()
-        kind = "private" if event.is_private else "group" if event.is_group else "channel"
-        chat_username = getattr(chat, "username", None)
-        text = event.raw_text or ""
-        if event.message.media and not text:
-            text = describe_media(event.message)
-        elif event.message.media:
-            text = f"{describe_media(event.message)} {text}"
-
-        msg = Incoming(
-            chat_id=event.chat_id,
-            chat_title=utils.get_display_name(chat) or "?",
-            chat_kind=kind,
-            chat_username=chat_username,
-            msg_id=event.id,
-            sender_id=event.sender_id,
-            sender_name=(utils.get_display_name(sender) if sender else None) or utils.get_display_name(chat) or "?",
-            sender_username=getattr(sender, "username", None),
-            text=text,
-            mentioned=bool(event.message.mentioned),
-            date=event.date,
-            link=message_link(kind, event.chat_id, chat_username, event.id),
-        )
-
-        sched = get_schedule(self.store)
-        if sched and sched.is_resting(event.date.astimezone(self.tz)):
-            self.store.add_message(msg, "skipped")  # giờ nghỉ: không báo, không tóm tắt, không gửi bù
-            return
-
-        keywords = [label for _, label in self.store.list_items("keyword")]
-        hit = match_rules(msg, self.store.list_map("vip"), keywords)
-        if not hit:
-            self.store.add_message(msg, "skipped" if digest_off(self.store) else "pending")
-            return
-
-        row_id = self.store.add_message(msg, "notified", hit)
-        await self.send(important_message(self.store.get_message(row_id), self.tz))
+        probe.chat_title = utils.get_display_name(chat) or "?"
+        probe.chat_username = getattr(chat, "username", None)
+        probe.sender_name = ((utils.get_display_name(sender) if sender else None)
+                             or utils.get_display_name(chat) or "?")
+        probe.sender_username = getattr(sender, "username", None)
+        probe.link = message_link(kind, event.chat_id, probe.chat_username, event.id)
+        await self.send(important_message(probe, self.tz))

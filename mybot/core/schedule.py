@@ -42,3 +42,9 @@ def parse_hhmm(s: str) -> time:
     if not m or int(m[1]) > 23 or int(m[2]) > 59:
         raise ValueError(f"Giờ không hợp lệ: {s} (đúng dạng: 17:30)")
     return time(int(m[1]), int(m[2]))
+
+
+def get_schedule(store) -> RestSchedule | None:
+    """Giờ nghỉ đã đặt bằng /schedule (lưu trong settings), hoặc None."""
+    d = store.get_setting("schedule")
+    return RestSchedule.from_dict(d) if d else None

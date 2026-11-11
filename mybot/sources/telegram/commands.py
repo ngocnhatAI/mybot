@@ -19,8 +19,10 @@ HELP = """<b>Theo dõi Telegram</b>
    Thêm: tên người, @username hoặc id (chỉ người, không thêm nhóm)
    Xóa: số thứ tự trong danh sách hoặc tên
 /keyword — từ khóa (viết tắt /kw)
-   Thêm: từ khóa · Xóa: số thứ tự hoặc từ khóa
+   Thêm: từ khóa
+   Xóa: số thứ tự hoặc từ khóa
 /schedule — giờ nghỉ hằng ngày
+
 <i>Chỉ báo: tin riêng từ VIP, tin có từ khóa, tin nhắc tên hoặc trả lời bạn. Còn lại bỏ qua.</i>
 Gõ nhanh: /vip add An · /vip remove 2 · /kw add gấp · /schedule 17:30 08:00"""
 

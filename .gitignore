@@ -8,3 +8,10 @@ __pycache__/
 .venv/
 .deps/
 .pytest_cache/
+
+host/docker_watchdog.log
+host/docker_watchdog.state
+host/watchdog.disabled
+host/wsl_broken_since.state
+host/wsl_repair_last.state
+host/install_wsl_repair_task.done

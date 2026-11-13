@@ -186,6 +186,12 @@ pip install -r requirements.txt pytest
 python -m pytest tests
 ```
 
+Test giả lập cho watchdog Docker/WSL (không đụng Docker, WSL thật):
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File tests\host\test_docker_watchdog.ps1
+```
+
 
 ---
 
@@ -238,3 +244,37 @@ UltraViewer cài ở chỗ khác `C:\Program Files (x86)\UltraViewer` thì đặ
 `UltraViewer_Desktop.exe`) trong `.env` rồi khởi động lại script.
 
 Mật khẩu UltraViewer cho phép điều khiển máy từ xa: tin nhắn chứa nó nằm trong chat với bot, nên giữ kín tài khoản Telegram.
+
+## Tự khởi động lại khi Docker chết (watchdog)
+
+`restart: unless-stopped` chỉ giúp khi container lỗi. Nếu chính Docker Desktop chết (ví dụ WSL tự cập nhật,
+lỗi `Wsl/CallMsi/Install/ERROR_NOT_FOUND`) thì không còn gì để khởi động lại bot. Hai task Windows lo việc này:
+
+- `mybot-docker-watchdog` (quyền thường, mỗi 3 phút + lúc đăng nhập) chạy `host/docker_watchdog.ps1`:
+  - Docker chạy bình thường → không làm gì.
+  - Docker chết, WSL ổn → tắt hẳn rồi mở lại Docker Desktop, chờ engine lên rồi `docker compose up -d --no-build`.
+    Sau mỗi lần khởi động lại thì chờ 6 phút mới can thiệp tiếp.
+  - WSL hỏng → chờ (thường là đang cập nhật). Hỏng liên tục quá 15 phút thì gọi task `mybot-wsl-repair`,
+    mỗi giờ tối đa một lần.
+- `mybot-wsl-repair` (quyền admin, chỉ chạy khi watchdog gọi) chạy `host/wsl_repair.ps1`: `wsl --update`,
+  không được thì `wsl --install --no-distribution`. Không tự khởi động lại Windows.
+
+Mọi việc đều ghi vào `host/docker_watchdog.log`. Tạm tắt: tạo file `host/watchdog.disabled` (nhớ làm
+trước khi chủ động tắt Docker Desktop, không thì vài phút sau nó tự mở lại).
+
+Cài đặt (một lần):
+
+1. PowerShell thường, tại thư mục dự án:
+   ```powershell
+   $user = "$env:USERDOMAIN\$env:USERNAME"
+   $action = New-ScheduledTaskAction -Execute 'conhost.exe' -Argument "--headless powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$PWD\host\docker_watchdog.ps1`"" -WorkingDirectory $PWD
+   $every = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes(1) -RepetitionInterval (New-TimeSpan -Minutes 3)
+   $logon = New-ScheduledTaskTrigger -AtLogOn -User $user; $logon.Delay = 'PT3M'
+   $settings = New-ScheduledTaskSettingsSet -MultipleInstances IgnoreNew -ExecutionTimeLimit (New-TimeSpan -Minutes 10) -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
+   $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Limited
+   Register-ScheduledTask -TaskName 'mybot-docker-watchdog' -Action $action -Trigger $every,$logon -Settings $settings -Principal $principal -Force
+   ```
+2. PowerShell **Run as Administrator**:
+   ```powershell
+   powershell -ExecutionPolicy Bypass -File "<thư mục dự án>\host\install_wsl_repair_task.ps1"
+   ```

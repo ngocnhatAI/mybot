@@ -148,7 +148,7 @@ Email **chỉ được gửi khi bạn bấm Gửi**.
 ## Cấu hình `config.yaml`
 
 Múi giờ, từ khóa mặc định (chỉ nạp lần chạy đầu), tên người gửi email (`mail.from_name`).
-Sửa xong chạy `docker compose restart`.
+Sửa xong chạy `docker compose restart` (trên VPS: `sudo systemctl restart mybot`).
 
 ## Cấu trúc code
 
@@ -173,8 +173,37 @@ Thêm tính năng mới: tạo thư mục trong `skills/` (hoặc `sources/` n�
 
 ## Chuyển lên VPS
 
-Trên VPS (Linux có Docker): `git clone` repo, chép `.env` và cả thư mục `data/` từ máy này lên
-(để khỏi đăng nhập lại), rồi `docker compose up -d`. **Tắt bot trên máy này trước** để không chạy hai nơi cùng lúc.
+Chạy trực tiếp bằng Python + systemd (không Docker), ví dụ Oracle ARM Ubuntu 22.04/24.04.
+`/screen` và `/ultraview` gọi về máy Windows qua mạng riêng Tailscale, không mở cổng nào ra Internet.
+
+**Tắt bot trên máy cũ trước** (`docker compose down`): chạy hai nơi cùng lúc có thể làm Telegram thu hồi
+`user.session`.
+
+1. Trên VPS (SSH vào):
+   ```bash
+   git clone https://github.com/ngocnhatAI/mybot.git ~/mybot
+   ```
+2. Từ máy Windows, chép bí mật và dữ liệu lên (để khỏi đăng nhập lại):
+   ```powershell
+   scp .env ubuntu@<IP VPS>:~/mybot/
+   scp -r data ubuntu@<IP VPS>:~/mybot/
+   ```
+   Trong `.env` trên VPS thêm `SCREEN_AGENT_URL=http://<IP Tailscale của máy Windows>:8765`.
+3. Trên VPS:
+   ```bash
+   cd ~/mybot && bash deploy/install.sh
+   sudo tailscale up
+   ```
+   `install.sh` cài Python venv, Tailscale và dịch vụ `mybot` (tự chạy khi VPS khởi động, tự chạy lại khi lỗi).
+
+Lệnh thường dùng trên VPS:
+
+| Việc | Lệnh |
+|---|---|
+| Xem log | `journalctl -u mybot -f` |
+| Khởi động lại (sau khi sửa `config.yaml`, `.env`) | `sudo systemctl restart mybot` |
+| Cập nhật code | `cd ~/mybot && git pull && bash deploy/install.sh` |
+| Sao lưu về máy Windows | `scp -r ubuntu@<IP VPS>:~/mybot/data .` |
 
 ## Phát triển
 
@@ -197,8 +226,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File tests\host\test_docker_watch
 
 ## Bật/tắt màn hình Windows (`/screen`)
 
-Bot chạy trong Docker nên không tự điều khiển được màn hình. Cần chạy thêm một script nhỏ trên Windows
-(`host/screen_agent.py`, chỉ dùng thư viện chuẩn của Python, không cần cài gì):
+Bot chạy trong Docker hoặc trên VPS nên không tự điều khiển được màn hình. Cần chạy thêm một script nhỏ trên Windows
+(`host/screen_agent.py`, chỉ dùng thư viện chuẩn của Python, không cần cài gì).
+
+**Bot chạy trên VPS:** cài Tailscale trên máy Windows (cùng tài khoản với VPS). Trong `.env` cạnh script
+(thư mục cha của `host/`) đặt `SCREEN_TOKEN` giống VPS và `SCREEN_BIND=<IP Tailscale của máy Windows>`,
+rồi mở tường lửa (PowerShell quyền admin):
+
+```powershell
+New-NetFirewallRule -DisplayName "screen-agent" -Direction Inbound -Protocol TCP -LocalPort 8765 -RemoteAddress 100.64.0.0/10 -Action Allow
+```
+
+Các bước dưới đây áp dụng cho cả hai cách chạy:
 
 1. Trong `.env` đặt `SCREEN_TOKEN=` một chuỗi bí mật bất kỳ (>= 16 ký tự), rồi build lại bot
    (nếu `docker compose up -d --build` báo lỗi `--allow=fs.read=Dockerfile`, dùng

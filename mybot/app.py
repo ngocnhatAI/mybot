@@ -37,7 +37,7 @@ async def run(cfg: Config) -> None:
     user = user_client(cfg)
     await user.connect()
     if not await user.is_user_authorized():
-        raise SystemExit("Chưa đăng nhập Telegram. Chạy: docker compose run --rm bot python -m mybot login")
+        raise SystemExit("Chưa đăng nhập Telegram. Chạy: .venv/bin/python -m mybot login")
 
     bot = TelegramClient(str(cfg.data_dir / "bot"), cfg.api_id, cfg.api_hash)
     bot.parse_mode = "html"
